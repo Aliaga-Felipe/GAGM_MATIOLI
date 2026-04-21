@@ -7,11 +7,11 @@ Backend:  PostgreSQL (psycopg2)
 Ejecutar:
     streamlit run app.py
 """
-
+import base64 #MAXI
 import os
 import streamlit as st
 import psycopg2
-import psycopg2.extras
+import psycopg2.extras 
 from psycopg2 import OperationalError, errors
 from dotenv import load_dotenv
 from datetime import datetime
@@ -24,14 +24,82 @@ load_dotenv()
 #os.environ["DB_NAME"] = "mateshop"
 #os.environ["DB_USER"] = "postgres"
 #os.environ["DB_PASSWORD"] = "fELIPEALIAGA2008"
+#---------------------
+#FUNCIONES DE UTILIDAD PARA IMAGENES MAXI
+#---------------------
+def get_base64_favicon(path):
+    if not os.path.exists(path):
+        path = "images/logo_mate.jpeg"  # imagen por defecto
 
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+def get_base64(img_file):
+    with open(img_file, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+# HEADER + HERO
+def header_hero(image_file):
+
+    img = get_base64(image_file)
+
+    header_html = f"""
+    <style>
+
+    /* Quitar márgenes laterales */
+    .block-container {{
+        padding-top: 0rem;
+        padding-left: 0rem;
+        padding-right: 0rem;
+        max-width: 100%;
+    }}
+
+    /* Barra superior */
+    .top-bar {{
+        background-color: #4b5d00;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        padding-left: 40px;
+    }}
+
+    /* Texto logo */
+    .logo-text {{
+        color: white;
+        font-size: 28px;
+        font-weight: bold;
+        font-style: italic;
+        font-family: sans-serif;
+    }}
+
+    /* Hero */
+    .hero {{
+        background-image: url("data:image/png;base64,{img}");
+        height: 497px;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+    }}
+
+    </style>
+
+    <div class="top-bar">
+        <div class="logo-text">
+            MATIOLI
+        </div>
+    </div>
+
+    <div class="hero"></div>
+    """
+
+    st.markdown(header_html, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # CONFIGURACION DE PaGINA
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="MateShop",
-    page_icon="🧉",
+    page_icon="/images/logo_mate.jpeg",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -39,26 +107,20 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # CSS PERSONALIZADO
 # ─────────────────────────────────────────────
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap');
 
+            
+    
     html, body, [class*="css"] {
         font-family: 'DM Sans', sans-serif;
     }
     h1, h2, h3 {
         font-family: 'Playfair Display', serif !important;
     }
-    .main-header {
-        background: linear-gradient(135deg, #2A1A08 0%, #3D6B3A 100%);
-        padding: 2rem 2.5rem;
-        border-radius: 16px;
-        margin-bottom: 2rem;
-        color: white;
-    }
-    .main-header h1 { color: white !important; font-size: 2.4rem; margin-bottom: 0.3rem; }
-    .main-header p  { color: rgba(255,255,255,0.7); font-size: 1rem; margin: 0; }
-
+    
     .metric-card {
         background: #F5F0E8;
         border: 1px solid rgba(107,79,42,0.15);
@@ -128,6 +190,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+header_hero( "images/Gemini_Generated_Image_xkgypxxkgypxxkgy.png") #maxi
 
 # ─────────────────────────────────────────────
 # CONEXION A BASE DE DATOS
@@ -403,7 +466,13 @@ init_session()
 # ─────────────────────────────────────────────
 
 TAG_OPTIONS = ["clasico", "premium", "popular", "edicion limitada", "accesorios"]
-TAG_ICONS   = {"clasico": "🧉", "premium": "🌿", "popular": "☕", "edicion limitada": "🎨", "accesorios": "🔧"}
+TAG_IMAGES = {
+    "clasico": "images/fcb.jpeg",
+    "premium": "images/logo_mate.jpeg",
+    "popular": "images/logo_mate.jpeg",              #MAXI
+    "edicion limitada": "images/logo_mate.jpeg",
+    "accesorios": "images/logo_mate.jpeg"
+}
 
 def stock_label(stock):
     if stock == 0:
@@ -420,7 +489,25 @@ def alert(msg, kind="info"):
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
+st.markdown("""
+    <style>
+    /* 1. Oculta el fondo blanco y la línea de la barra superior */
+    header[data-testid="stHeader"] {
+        background: rgba(0,0,0,0);
+        border-bottom: none;
+    }
 
+    /* 2. Oculta específicamente el botón de Deploy y el menú de hamburguesa */
+    .stAppDeployButton, #MainMenu {
+        visibility: hidden;
+    }
+    
+    /* 3. Asegura que el botón del sidebar siga visible y funcional */
+    button[data-testid="stSidebarCollapseIcon"] {
+        visibility: visible;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 with st.sidebar:
     st.markdown("## 🧉 MateShop")
     st.markdown("---")
@@ -457,13 +544,6 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 
 if st.session_state.page == "catalogo":
-    
-    st.markdown("""
-    <div class="main-header">
-        <h1>🧉 MateShop</h1>
-        <p>La mejor seleccion de mates artesanales — Cordoba, Argentina</p>
-    </div>
-    """, unsafe_allow_html=True)
 
     col_search, col_tag = st.columns([3, 1])
     with col_search:
@@ -480,10 +560,11 @@ if st.session_state.page == "catalogo":
         cols = st.columns(3)
         for i, p in enumerate(products):
             with cols[i % 3]:
-                icon = TAG_ICONS.get(p["tag"], "📦")
+                icon_path = TAG_IMAGES.get(p["tag"], "images/logo_mate.jpeg")    #MAXI
+                icon_base64 = get_base64_favicon(icon_path)#MAXI
                 st.markdown(f"""
                 <div class="product-card">
-                    <div style="font-size:2.5rem;text-align:center;padding:1rem 0;background:#F5F0E8;border-radius:8px;margin-bottom:1rem">{icon}</div>
+                    <div style="text-align:center;padding:1rem 0;background:#F5F0E8;border-radius:8px;margin-bottom:1rem"><img src="data:image/jpeg;base64,{icon_base64}" style="width:80px;height:80px;object-fit:contain;"></div>
                     <div class="section-label">{p['tag']}</div>
                     <h3 style="font-size:1.1rem;margin:0 0 0.4rem">{p['name']}</h3>
                     <p style="font-size:0.82rem;color:#7A6347;line-height:1.5;margin-bottom:0.8rem">{p['description'] or ''}</p>
@@ -580,6 +661,8 @@ elif st.session_state.page == "login":
                     st.rerun()
                 else:
                     alert("Credenciales incorrectas.", "error")
+
+        st.markdown("---")
 
     with tab_register:
         with st.form("form_register"):
