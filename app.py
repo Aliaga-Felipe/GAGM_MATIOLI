@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 import hashlib
 import hmac
+import uuid
+
 
 load_dotenv()
 #os.environ["DB_HOST"] = "localhost"
@@ -379,15 +381,16 @@ def db_get_product(product_id: int) -> dict:
         return {}
 
 
-def db_insert_product(name, description, price, stock, tag) -> bool:
+def db_insert_product(name, description, price, stock, tag, image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
-            INSERT INTO products (name, description, price, stock, tag)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (name, description, price, stock, tag))
+            INSERT INTO products
+            (name, description, price, stock, tag, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (name, description, price, stock, tag, image_url))
         commit()
         return True
     except Exception as e:
@@ -396,14 +399,14 @@ def db_insert_product(name, description, price, stock, tag) -> bool:
         return False
 
 
-def db_update_product(product_id, name, description, price, stock, tag) -> bool:
+def db_update_product(product_id,name,description,price,stock,tag,image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
             UPDATE products
-            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, updated_at=NOW()
+            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, image_url=%s, updated_at=NOW()
             WHERE id=%s
         """, (name, description, price, stock, tag, product_id))
         commit()
@@ -815,20 +818,81 @@ elif st.session_state.page == "admin_productos":
 
     # ── Nuevo producto ──
     with tab_add:
-        with st.form("form_new_product"):
-            name  = st.text_input("Nombre del producto")
-            desc  = st.text_area("Descripcion")
-            price = st.number_input("Precio ($)", min_value=0.0, step=100.0, format="%.2f")
-            stock = st.number_input("Stock inicial", min_value=0, step=1)
-            tag   = st.selectbox("Categoria", TAG_OPTIONS)
-            ok    = st.form_submit_button("Agregar producto", use_container_width=True)
-        if ok:
-            if not name:
-                alert("El nombre es obligatorio.", "error")
-            elif db_insert_product(name, desc, price, stock, tag):
-                alert(f"✓ Producto '{name}' agregado correctamente.", "success")
-                st.rerun()
 
+        with st.form("form_new_product"):
+
+            name = st.text_input("Nombre del producto")
+
+            desc = st.text_area("Descripcion")
+
+            price = st.number_input(
+                "Precio ($)",
+                min_value=0.0,
+                step=100.0,
+                format="%.2f"
+            )
+
+            stock = st.number_input(
+                "Stock inicial",
+                min_value=0,
+                step=1
+            )
+
+            tag = st.selectbox(
+                "Categoria",
+                TAG_OPTIONS
+            )
+
+            image_file = st.file_uploader(
+                "Imagen del producto",
+                type=["png", "jpg", "jpeg"]
+            )
+
+            ok = st.form_submit_button(
+                "Agregar producto",
+                use_container_width=True
+            )
+
+        if ok:
+
+            image_path = None
+
+            if image_file is not None:
+
+                extension = image_file.name.split(".")[-1]
+
+                filename = f"{uuid.uuid4()}.{extension}"
+
+                image_path = os.path.join(
+                    "images",
+                    filename
+                )
+
+                with open(image_path, "wb") as f:
+                    f.write(image_file.getbuffer())
+
+            if not name:
+
+                alert(
+                    "El nombre es obligatorio.",
+                    "error"
+                )
+
+            elif db_insert_product(
+                name,
+                desc,
+                price,
+                stock,
+                tag,
+                image_path
+            ):
+
+                alert(
+                    f"✓ Producto '{name}' agregado correctamente.",
+                    "success"
+                )
+
+                st.rerun()
     # ── Editar producto ──
     with tab_edit:
         products = db_get_products()
