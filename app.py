@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import hashlib
 import hmac
+import uuid
 
 
 load_dotenv()
@@ -30,7 +31,7 @@ load_dotenv()
 #---------------------
 def get_base64_favicon(path):
     if not os.path.exists(path):
-        path = "images/logo_pintado.png"  # imagen por defecto
+        path = "images/logo_mate.jpeg"  # imagen por defecto
 
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
@@ -49,37 +50,46 @@ def header_hero(image_file):
 
     /* Quitar márgenes laterales */
     .block-container {{
-    padding-top: 0rem !important;
-    padding-left: 0rem !important;
-    padding-right: 0rem !important;
-    padding-bottom: 0rem !important;
-    max-width: 100% !important;
+        padding-top: 0rem;
+        padding-left: 0rem;
+        padding-right: 0rem;
+        max-width: 100%;
     }}
 
-    [data-testid="stAppViewContainer"] {{
-    margin-top: 0;
-    padding-top: 0;
+    /* Barra superior */
+    .top-bar {{
+        background-color: #4b5d00;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        padding-left: 40px;
     }}
 
-    .main .block-container {{
-    padding-top: 0rem !important;
-    margin-top: 0rem !important;
+    /* Texto logo */
+    .logo-text {{
+        color: white;
+        font-size: 28px;
+        font-weight: bold;
+        font-style: italic;
+        font-family: sans-serif;
     }}
-
-
 
     /* Hero */
     .hero {{
-    background-image: url("data:image/png;base64,{img}");
-    height: 620px;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+        background-image: url("data:image/png;base64,{img}");
+        height: 497px;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
     }}
 
     </style>
 
-    
+    <div class="top-bar">
+        <div class="logo-text">
+            MATIOLI
+        </div>
+    </div>
 
     <div class="hero"></div>
     """
@@ -91,7 +101,7 @@ def header_hero(image_file):
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="MateShop",
-    page_icon="images/logo_pintado.png",
+    page_icon="/images/logo_mate.jpeg",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -99,26 +109,6 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # CSS PERSONALIZADO
 # ─────────────────────────────────────────────
-st.markdown("""
-<style>
-
-header[data-testid="stHeader"]{
-    height:0px;
-    background:transparent;
-}
-
-.main .block-container{
-    padding-top:0rem !important;
-    margin-top:0rem !important;
-}
-
-section.main > div{
-    padding-top:0rem !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
 
 st.markdown("""
 <style>
@@ -391,15 +381,16 @@ def db_get_product(product_id: int) -> dict:
         return {}
 
 
-def db_insert_product(name, description, price, stock, tag) -> bool:
+def db_insert_product(name, description, price, stock, tag, image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
-            INSERT INTO products (name, description, price, stock, tag)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (name, description, price, stock, tag))
+            INSERT INTO products
+            (name, description, price, stock, tag, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (name, description, price, stock, tag, image_url))
         commit()
         return True
     except Exception as e:
@@ -408,14 +399,14 @@ def db_insert_product(name, description, price, stock, tag) -> bool:
         return False
 
 
-def db_update_product(product_id, name, description, price, stock, tag) -> bool:
+def db_update_product(product_id,name,description,price,stock,tag,image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
             UPDATE products
-            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, updated_at=NOW()
+            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, image_url=%s, updated_at=NOW()
             WHERE id=%s
         """, (name, description, price, stock, tag, product_id))
         commit()
@@ -561,10 +552,10 @@ init_session()
 TAG_OPTIONS = ["clasico", "premium", "popular", "edicion limitada", "accesorios"]
 TAG_IMAGES = {
     "clasico": "images/fcb.jpeg",
-    "premium": "images/logo_pintado.png",
-    "popular": "images/logo_pintado.png",              #MAXI
-    "edicion limitada": "images/logo_pintado.png",
-    "accesorios": "images/logo_pintado.png"
+    "premium": "images/logo_mate.jpeg",
+    "popular": "images/logo_mate.jpeg",              #MAXI
+    "edicion limitada": "images/logo_mate.jpeg",
+    "accesorios": "images/logo_mate.jpeg"
 }
 
 def stock_label(stock):
@@ -827,20 +818,81 @@ elif st.session_state.page == "admin_productos":
 
     # ── Nuevo producto ──
     with tab_add:
-        with st.form("form_new_product"):
-            name  = st.text_input("Nombre del producto")
-            desc  = st.text_area("Descripcion")
-            price = st.number_input("Precio ($)", min_value=0.0, step=100.0, format="%.2f")
-            stock = st.number_input("Stock inicial", min_value=0, step=1)
-            tag   = st.selectbox("Categoria", TAG_OPTIONS)
-            ok    = st.form_submit_button("Agregar producto", use_container_width=True)
-        if ok:
-            if not name:
-                alert("El nombre es obligatorio.", "error")
-            elif db_insert_product(name, desc, price, stock, tag):
-                alert(f"✓ Producto '{name}' agregado correctamente.", "success")
-                st.rerun()
 
+        with st.form("form_new_product"):
+
+            name = st.text_input("Nombre del producto")
+
+            desc = st.text_area("Descripcion")
+
+            price = st.number_input(
+                "Precio ($)",
+                min_value=0.0,
+                step=100.0,
+                format="%.2f"
+            )
+
+            stock = st.number_input(
+                "Stock inicial",
+                min_value=0,
+                step=1
+            )
+
+            tag = st.selectbox(
+                "Categoria",
+                TAG_OPTIONS
+            )
+
+            image_file = st.file_uploader(
+                "Imagen del producto",
+                type=["png", "jpg", "jpeg"]
+            )
+
+            ok = st.form_submit_button(
+                "Agregar producto",
+                use_container_width=True
+            )
+
+        if ok:
+
+            image_path = None
+
+            if image_file is not None:
+
+                extension = image_file.name.split(".")[-1]
+
+                filename = f"{uuid.uuid4()}.{extension}"
+
+                image_path = os.path.join(
+                    "images",
+                    filename
+                )
+
+                with open(image_path, "wb") as f:
+                    f.write(image_file.getbuffer())
+
+            if not name:
+
+                alert(
+                    "El nombre es obligatorio.",
+                    "error"
+                )
+
+            elif db_insert_product(
+                name,
+                desc,
+                price,
+                stock,
+                tag,
+                image_path
+            ):
+
+                alert(
+                    f"✓ Producto '{name}' agregado correctamente.",
+                    "success"
+                )
+
+                st.rerun()
     # ── Editar producto ──
     with tab_edit:
         products = db_get_products()
