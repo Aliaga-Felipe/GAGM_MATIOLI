@@ -18,6 +18,7 @@ from datetime import datetime
 import hashlib
 import hmac
 
+
 load_dotenv()
 #os.environ["DB_HOST"] = "localhost"
 #os.environ["DB_PORT"] = "5432"
@@ -190,7 +191,88 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-header_hero( "images/Gemini_Generated_Image_xkgypxxkgypxxkgy.png") #maxi
+st.markdown("""
+    <style>
+    
+    /* TARJETA PROMOCIONAL */
+    
+    .promo-card {
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid rgba(0,0,0,0.08);
+        transition: 0.2s;
+        margin-bottom: 25px;
+    }
+    
+    .promo-card:hover {
+        box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    }
+    
+    /* IMAGEN GRANDE */
+    
+    .promo-image {
+        width: 100%;
+        height: 260px;
+        overflow: hidden;
+        background: #f5f0e8;
+    }
+    
+    .promo-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    /* CONTENIDO */
+    
+    .promo-content {
+        padding: 15px;
+    }
+    
+    /* TAG */
+    
+    .promo-tag {
+        font-size: 12px;
+        text-transform: uppercase;
+        color: #B85C28;
+        margin-bottom: 6px;
+    }
+    
+    /* TITULO */
+    
+    .promo-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    
+    /* DESCRIPCION */
+    
+    .promo-description {
+        font-size: 13px;
+        color: #777;
+        margin-bottom: 10px;
+    }
+    
+    /* PRECIO */
+    
+    .promo-price {
+        font-size: 22px;
+        font-weight: bold;
+        color: #2A1A08;
+    }
+    
+    /* STOCK */
+    
+    .promo-stock {
+        margin-top: 5px;
+    }
+    
+    </style>
+    """, unsafe_allow_html=True)
+
+ #maxi
 
 # ─────────────────────────────────────────────
 # CONEXION A BASE DE DATOS
@@ -266,7 +348,7 @@ def db_get_products(search: str = "", tag: str = "todos") -> list:
         return []
     try:
         query = """
-            SELECT id, name, description, price, stock, tag, updated_at
+            SELECT id, name, description, price, stock, tag, image_url, updated_at
             FROM products
             WHERE 1=1
         """
@@ -509,7 +591,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 with st.sidebar:
-    st.markdown("## 🧉 MateShop")
+    st.markdown("## 🧉 Matioli")
     st.markdown("---")
 
     if st.session_state.user:
@@ -544,7 +626,7 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 
 if st.session_state.page == "catalogo":
-
+    header_hero("images/Gemini_Generated_Image_xkgypxxkgypxxkgy.png")
     col_search, col_tag = st.columns([3, 1])
     with col_search:
         search = st.text_input("", placeholder="Buscar productos...", label_visibility="collapsed")
@@ -557,23 +639,35 @@ if st.session_state.page == "catalogo":
         alert("No se encontraron productos con esos filtros.", "info")
     else:
         st.markdown(f"<p style='color:#7A6347;font-size:0.85rem;margin-bottom:1rem'>{len(products)} producto(s) encontrado(s)</p>", unsafe_allow_html=True)
-        cols = st.columns(3)
+        cols = st.columns(4)
         for i, p in enumerate(products):
-            with cols[i % 3]:
-                icon_path = TAG_IMAGES.get(p["tag"], "images/logo_mate.jpeg")    #MAXI
+            with cols[i % 4]:
+                icon_path = p.get("image_url") or "images/mate_madera.png"
                 icon_base64 = get_base64_favicon(icon_path)#MAXI
                 st.markdown(f"""
-                <div class="product-card">
-                    <div style="text-align:center;padding:1rem 0;background:#F5F0E8;border-radius:8px;margin-bottom:1rem"><img src="data:image/jpeg;base64,{icon_base64}" style="width:80px;height:80px;object-fit:contain;"></div>
-                    <div class="section-label">{p['tag']}</div>
-                    <h3 style="font-size:1.1rem;margin:0 0 0.4rem">{p['name']}</h3>
-                    <p style="font-size:0.82rem;color:#7A6347;line-height:1.5;margin-bottom:0.8rem">{p['description'] or ''}</p>
-                    <div style="display:flex;justify-content:space-between;align-items:center">
-                        <span style="font-size:1.3rem;font-weight:500;color:#2A1A08">${p['price']:,.0f}</span>
-                        {stock_label(p['stock'])}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+<div class="promo-card">
+    <div class="promo-image">
+        <img src="data:image/jpeg;base64,{icon_base64}">
+    </div>
+    <div class="promo-content">
+        <div class="promo-tag">
+            {p['tag']}
+        </div>
+        <div class="promo-title">
+            {p['name']}
+        </div>
+        <div class="promo-description">
+            {p['description'] or ''}
+        </div>
+        <div class="promo-price">
+            ${p['price']:,.0f}
+        </div>
+        <div class="promo-stock">
+            {stock_label(p['stock'])}
+        </div>
+    </div>
+</div>
+                    """, unsafe_allow_html=True)
 
                 if st.session_state.user and p["stock"] > 0:
                     qty = st.number_input(
