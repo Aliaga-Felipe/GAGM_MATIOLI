@@ -49,10 +49,11 @@ def header_hero(image_file):
 
     /* Quitar márgenes laterales */
     .block-container {{
-        padding-top: 0rem;
-        padding-left: 0rem;
-        padding-right: 0rem;
-        max-width: 100%;
+    padding-top: 0rem !important;
+    padding-left: 0rem !important;
+    padding-right: 0rem !important;
+    padding-bottom: 0rem !important;
+    max-width: 100% !important;
     }}
 
     [data-testid="stAppViewContainer"] {{
@@ -65,40 +66,20 @@ def header_hero(image_file):
     margin-top: 0rem !important;
     }}
 
-    /* Barra superior */
-    .top-bar {{
-        background-color: #4b5d00;
-        height: 60px;
-        display: flex;
-        align-items: center;
-        padding-left: 40px;
-    }}
 
-    /* Texto logo */
-    .logo-text {{
-        color: white;
-        font-size: 28px;
-        font-weight: bold;
-        font-style: italic;
-        font-family: sans-serif;
-    }}
 
     /* Hero */
     .hero {{
-        background-image: url("data:image/png;base64,{img}");
-        height: 620px;
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
+    background-image: url("data:image/png;base64,{img}");
+    height: 620px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     }}
 
     </style>
 
-    <div class="top-bar">
-        <div class="logo-text">
-            MATIOLI
-        </div>
-    </div>
+    
 
     <div class="hero"></div>
     """
@@ -110,7 +91,7 @@ def header_hero(image_file):
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="MateShop",
-    page_icon="/images/logo_pintado.png",
+    page_icon="images/logo_pintado.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -120,16 +101,25 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
+
 header[data-testid="stHeader"]{
     height:0px;
+    background:transparent;
 }
 
 .main .block-container{
     padding-top:0rem !important;
     margin-top:0rem !important;
 }
+
+section.main > div{
+    padding-top:0rem !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
+
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap');
