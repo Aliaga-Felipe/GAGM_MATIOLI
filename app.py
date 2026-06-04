@@ -30,7 +30,7 @@ load_dotenv()
 #---------------------
 def get_base64_favicon(path):
     if not os.path.exists(path):
-        path = "images/logo_mate.jpeg"  # imagen por defecto
+        path = "images/logo_pintado.png"  # imagen por defecto
 
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
@@ -55,6 +55,16 @@ def header_hero(image_file):
         max-width: 100%;
     }}
 
+    [data-testid="stAppViewContainer"] {{
+    margin-top: 0;
+    padding-top: 0;
+    }}
+
+    .main .block-container {{
+    padding-top: 0rem !important;
+    margin-top: 0rem !important;
+    }}
+
     /* Barra superior */
     .top-bar {{
         background-color: #4b5d00;
@@ -76,7 +86,7 @@ def header_hero(image_file):
     /* Hero */
     .hero {{
         background-image: url("data:image/png;base64,{img}");
-        height: 497px;
+        height: 620px;
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
@@ -100,7 +110,7 @@ def header_hero(image_file):
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="MateShop",
-    page_icon="/images/logo_mate.jpeg",
+    page_icon="/images/logo_pintado.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -108,7 +118,18 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # CSS PERSONALIZADO
 # ─────────────────────────────────────────────
+st.markdown("""
+<style>
+header[data-testid="stHeader"]{
+    height:0px;
+}
 
+.main .block-container{
+    padding-top:0rem !important;
+    margin-top:0rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap');
@@ -550,10 +571,10 @@ init_session()
 TAG_OPTIONS = ["clasico", "premium", "popular", "edicion limitada", "accesorios"]
 TAG_IMAGES = {
     "clasico": "images/fcb.jpeg",
-    "premium": "images/logo_mate.jpeg",
-    "popular": "images/logo_mate.jpeg",              #MAXI
-    "edicion limitada": "images/logo_mate.jpeg",
-    "accesorios": "images/logo_mate.jpeg"
+    "premium": "images/logo_pintado.png",
+    "popular": "images/logo_pintado.png",              #MAXI
+    "edicion limitada": "images/logo_pintado.png",
+    "accesorios": "images/logo_pintado.png"
 }
 
 def stock_label(stock):
