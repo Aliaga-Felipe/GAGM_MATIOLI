@@ -14,9 +14,10 @@ import psycopg2
 import psycopg2.extras 
 from psycopg2 import OperationalError, errors
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import hmac
+import html
 import uuid
 
 
@@ -268,6 +269,98 @@ st.markdown("""
     
     .promo-stock {
         margin-top: 5px;
+    }
+
+    .detail-shell {
+        padding: 1.5rem 2rem 2.5rem;
+        background: #FBF8F2;
+    }
+
+    .detail-topline {
+        color: #7A6347;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .detail-photo {
+        background: #F5F0E8;
+        border: 1px solid rgba(107,79,42,0.12);
+        border-radius: 10px;
+        min-height: 520px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .detail-photo img {
+        max-width: 100%;
+        max-height: 480px;
+        object-fit: contain;
+        border-radius: 8px;
+    }
+
+    .detail-info h1 {
+        color: #2A1A08;
+        font-size: 2rem;
+        line-height: 1.15;
+        margin: 0 0 0.75rem;
+    }
+
+    .detail-description {
+        color: #5C4A34;
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-top: 1rem;
+    }
+
+    .detail-paybox {
+        background: white;
+        border: 1px solid rgba(107,79,42,0.18);
+        border-radius: 10px;
+        padding: 1.4rem;
+        box-shadow: 0 10px 30px rgba(42,26,8,0.08);
+    }
+
+    .pay-label {
+        color: #7A6347;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 0.2rem;
+    }
+
+    .pay-price {
+        color: #2A1A08;
+        font-size: 2.1rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+
+    .pay-note {
+        color: #3D6B3A;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+
+    .pay-section {
+        border-top: 1px solid rgba(107,79,42,0.14);
+        padding-top: 1rem;
+        margin-top: 1rem;
+        color: #2A1A08;
+    }
+
+    .pay-method {
+        background: #F5F0E8;
+        border: 1px solid rgba(107,79,42,0.16);
+        border-radius: 8px;
+        padding: 0.7rem 0.9rem;
+        margin-top: 0.5rem;
+        color: #2A1A08;
+    }
+
+    .detail-back {
+        margin-bottom: 1rem;
     }
     
     </style>
@@ -536,6 +629,8 @@ def init_session():
         "page": "catalogo",
         "cart": {},
         "edit_product_id": None,
+        "selected_product_id": None,
+        "payment_confirmed": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -568,6 +663,30 @@ def stock_label(stock):
 
 def alert(msg, kind="info"):
     st.markdown(f'<div class="alert-{kind}">{msg}</div>', unsafe_allow_html=True)
+
+
+def money(value):
+    return f"${float(value):,.0f}"
+
+
+def delivery_date():
+    return (datetime.now() + timedelta(days=3)).strftime("%d/%m/%Y")
+
+
+def add_product_to_cart(product, qty):
+    cart = st.session_state.cart
+    pid = product["id"]
+    current_qty = cart.get(pid, {}).get("qty", 0)
+    next_qty = min(product["stock"], current_qty + qty)
+    cart[pid] = {
+        "name": product["name"],
+        "price": float(product["price"]),
+        "qty": next_qty,
+        "stock": product["stock"],
+        "description": product.get("description") or "",
+        "image_url": product.get("image_url"),
+    }
+    st.session_state.cart = cart
 
 
 # ─────────────────────────────────────────────
@@ -607,8 +726,12 @@ with st.sidebar:
         if u["role"] == "admin":
             pages  += ["admin_productos", "admin_usuarios", "admin_stats"]
             labels += ["Gestion de productos", "Usuarios", "Estadisticas"]
+        if st.session_state.page == "producto_detalle" and st.session_state.selected_product_id:
+            pages += ["producto_detalle"]
+            labels += ["Detalle producto"]
 
-        choice = st.radio("Navegacion", labels, label_visibility="collapsed")
+        nav_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
+        choice = st.radio("Navegacion", labels, index=nav_index, label_visibility="collapsed")
         st.session_state.page = pages[labels.index(choice)]
 
         st.markdown("---")
@@ -619,8 +742,14 @@ with st.sidebar:
             st.rerun()
     else:
         st.markdown("Navegacion")
-        choice = st.radio("", ["Catalogo", "Iniciar sesion / Registrarse"], label_visibility="collapsed")
-        st.session_state.page = "catalogo" if choice == "Catalogo" else "login"
+        pages = ["catalogo", "login"]
+        labels = ["Catalogo", "Iniciar sesion / Registrarse"]
+        if st.session_state.page == "producto_detalle" and st.session_state.selected_product_id:
+            pages += ["producto_detalle"]
+            labels += ["Detalle producto"]
+        nav_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
+        choice = st.radio("", labels, index=nav_index, label_visibility="collapsed")
+        st.session_state.page = pages[labels.index(choice)]
 
 
 # ─────────────────────────────────────────────
@@ -671,20 +800,19 @@ if st.session_state.page == "catalogo":
 </div>
                     """, unsafe_allow_html=True)
 
+                if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
+                    st.session_state.selected_product_id = p["id"]
+                    st.session_state.payment_confirmed = False
+                    st.session_state.page = "producto_detalle"
+                    st.rerun()
+
                 if st.session_state.user and p["stock"] > 0:
                     qty = st.number_input(
                         "Cantidad", min_value=1, max_value=p["stock"],
                         value=1, key=f"qty_{p['id']}", label_visibility="collapsed"
                     )
                     if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
-                        cart = st.session_state.cart
-                        cart[p["id"]] = {
-                            "name": p["name"],
-                            "price": float(p["price"]),
-                            "qty": cart.get(p["id"], {}).get("qty", 0) + qty,
-                            "stock": p["stock"],
-                        }
-                        st.session_state.cart = cart
+                        add_product_to_cart(p, qty)
                         st.success(f"✓ {p['name']} agregado")
                         st.rerun()
                 elif not st.session_state.user:
@@ -694,6 +822,104 @@ if st.session_state.page == "catalogo":
 # ─────────────────────────────────────────────
 # PAGINA: CARRITO
 # ─────────────────────────────────────────────
+
+elif st.session_state.page == "producto_detalle":
+    product_id = st.session_state.selected_product_id
+
+    if st.button("Volver al catalogo", key="back_to_catalog", use_container_width=False):
+        st.session_state.page = "catalogo"
+        st.session_state.payment_confirmed = False
+        st.rerun()
+
+    if not product_id:
+        alert("Selecciona un producto desde el catalogo.", "info")
+        st.stop()
+
+    product = db_get_product(product_id)
+    if not product:
+        alert("No se pudo cargar el producto seleccionado.", "error")
+        st.stop()
+
+    image_path = product.get("image_url") or "images/mate_madera.png"
+    image_base64 = get_base64_favicon(image_path)
+    name = html.escape(str(product.get("name") or "Producto"))
+    description = html.escape(str(product.get("description") or "Sin descripcion disponible."))
+    tag = html.escape(str(product.get("tag") or "catalogo"))
+    price = float(product.get("price") or 0)
+    stock = int(product.get("stock") or 0)
+    six_payments = price / 6 if price else 0
+
+    st.markdown('<div class="detail-shell">', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="detail-topline">Matioli | {tag} | Stock disponible: {stock}</div>',
+        unsafe_allow_html=True
+    )
+
+    detail_col, pay_col = st.columns([1.65, 0.85], gap="large")
+
+    with detail_col:
+        st.markdown(f"""
+        <div class="detail-photo">
+            <img src="data:image/jpeg;base64,{image_base64}" alt="{name}">
+        </div>
+        <div class="detail-info">
+            <div class="section-label">{tag}</div>
+            <h1>{name}</h1>
+            <div class="detail-description">{description}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with pay_col:
+        st.markdown(f"""
+        <div class="detail-paybox">
+            <div class="pay-label">Importe</div>
+            <div class="pay-price">{money(price)}</div>
+            <div class="pay-note">En 6 cuotas de {money(six_payments)}</div>
+            <div class="pay-section">
+                <strong>Fecha de entrega aproximada</strong><br>
+                Llega el {delivery_date()}
+            </div>
+            <div class="pay-section">
+                <strong>Metodos de pago</strong>
+                <div class="pay-method">Tarjeta de credito o debito</div>
+                <div class="pay-method">Transferencia bancaria</div>
+                <div class="pay-method">Efectivo al retirar</div>
+            </div>
+            <div class="pay-section">
+                <strong>{'Stock disponible' if stock > 0 else 'Sin stock disponible'}</strong><br>
+                Compra simulada, sin cobro real.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        qty = st.number_input(
+            "Cantidad",
+            min_value=1,
+            max_value=max(stock, 1),
+            value=1,
+            disabled=stock == 0,
+            key=f"detail_qty_{product_id}"
+        )
+        payment_method = st.radio(
+            "Metodo elegido",
+            ["Tarjeta", "Transferencia", "Efectivo al retirar"],
+            key=f"payment_method_{product_id}"
+        )
+
+        pay_disabled = stock == 0
+        if st.button("Pagar ahora", key=f"pay_now_{product_id}", use_container_width=True, disabled=pay_disabled):
+            st.session_state.payment_confirmed = True
+            alert(f"Pago simulado aprobado con {payment_method}. Total: {money(price * qty)}", "success")
+
+        if st.button("Agregar al carrito", key=f"detail_add_{product_id}", use_container_width=True, disabled=pay_disabled):
+            add_product_to_cart(product, qty)
+            alert(f"Producto agregado al carrito: {name}", "success")
+
+        if st.session_state.payment_confirmed:
+            alert("Operacion simulada correctamente. No se realizo ningun cobro real.", "info")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 elif st.session_state.page == "carrito":
     st.markdown('<div class="section-label">Tu compra</div>', unsafe_allow_html=True)
