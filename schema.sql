@@ -35,6 +35,37 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TIMESTAMP     DEFAULT NOW()
 );
 
+-- Tabla: pedidos / facturas
+CREATE TABLE IF NOT EXISTS orders (
+    id                   SERIAL PRIMARY KEY,
+    invoice_number       VARCHAR(40) UNIQUE NOT NULL,
+    user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    total                NUMERIC(10,2) NOT NULL CHECK (total >= 0),
+    status               VARCHAR(30) NOT NULL DEFAULT 'confirmado',
+    shipping_name        VARCHAR(120) NOT NULL,
+    shipping_phone       VARCHAR(40) NOT NULL,
+    shipping_email       VARCHAR(180) NOT NULL,
+    shipping_city        VARCHAR(120) NOT NULL,
+    shipping_address     TEXT NOT NULL,
+    shipping_postal_code VARCHAR(20) NOT NULL,
+    shipping_notes       TEXT,
+    card_holder          VARCHAR(120) NOT NULL,
+    card_last4           VARCHAR(4) NOT NULL,
+    card_expiration      VARCHAR(10) NOT NULL,
+    created_at           TIMESTAMP DEFAULT NOW()
+);
+
+-- Tabla: productos incluidos en cada pedido
+CREATE TABLE IF NOT EXISTS order_items (
+    id           SERIAL PRIMARY KEY,
+    order_id     INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id   INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_name VARCHAR(120) NOT NULL,
+    unit_price   NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+    quantity     INTEGER NOT NULL CHECK (quantity > 0),
+    subtotal     NUMERIC(10,2) NOT NULL CHECK (subtotal >= 0)
+);
+
 -- ── DATOS DE PRUEBA — PRODUCTOS ──────────────────────────────
 INSERT INTO products (name, description, price, stock, tag) VALUES
     ('Mate Calabaza Natural',     'Curada artesanalmente, con virola de alpaca. Capacidad 250ml.', 1500.00, 25, 'clasico'),
@@ -67,3 +98,6 @@ ON CONFLICT (email) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_products_tag   ON products(tag);
 CREATE INDEX IF NOT EXISTS idx_products_stock ON products(stock);
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);

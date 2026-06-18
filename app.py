@@ -285,12 +285,23 @@ def get_connection():
     Lee credenciales desde variables de entorno (.env).
     """
     try:
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            conn = psycopg2.connect(
+                database_url,
+                sslmode=os.getenv("DB_SSLMODE", "require"),
+                connect_timeout=5,
+            )
+            conn.autocommit = False
+            return conn
+
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "localhost"),
             port=os.getenv("DB_PORT", "5432"),
             database=os.getenv("DB_NAME", "mateshop"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
+            sslmode=os.getenv("DB_SSLMODE", "prefer"),
             connect_timeout=5,
         )
         conn.autocommit = False
@@ -446,6 +457,98 @@ def db_update_stock(product_id, delta: int) -> bool:
         rollback()
         st.error(f"Error al actualizar stock: {e}")
         return False
+
+
+# ─────────────────────────────────────────────
+# OPERACIONES DE BASE DE DATOS — PEDIDOS / FACTURAS
+# ─────────────────────────────────────────────
+
+def db_create_order(user_id: int, cart: dict, shipping_data: dict, payment_data: dict) -> tuple[bool, str, str]:
+    cur = get_cursor()
+    if cur is None:
+        return False, "", "Sin conexion a la base de datos."
+    try:
+        invoice_number = f"MAT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{user_id}"
+        total = sum(float(item["price"]) * int(item["qty"]) for item in cart.values())
+
+        cur.execute("""
+            INSERT INTO orders (
+                invoice_number, user_id, total, shipping_name, shipping_phone,
+                shipping_email, shipping_city, shipping_address, shipping_postal_code,
+                shipping_notes, card_holder, card_last4, card_expiration
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            invoice_number, user_id, total,
+            shipping_data["name"], shipping_data["phone"], shipping_data["email"],
+            shipping_data["city"], shipping_data["address"], shipping_data["postal_code"],
+            shipping_data.get("notes", ""),
+            payment_data["card_holder"], payment_data["card_last4"], payment_data["card_expiration"],
+        ))
+        order_id = cur.fetchone()["id"]
+
+        for product_id, item in cart.items():
+            qty = int(item["qty"])
+            price = float(item["price"])
+            subtotal = price * qty
+
+            cur.execute("""
+                UPDATE products
+                SET stock = stock - %s, updated_at = NOW()
+                WHERE id = %s AND stock >= %s
+            """, (qty, product_id, qty))
+            if cur.rowcount == 0:
+                raise ValueError(f"No hay stock suficiente para {item['name']}.")
+
+            cur.execute("""
+                INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (order_id, product_id, item["name"], price, qty, subtotal))
+
+        commit()
+        return True, invoice_number, "Pedido guardado correctamente."
+    except Exception as e:
+        rollback()
+        return False, "", f"Error al guardar el pedido: {e}"
+
+
+def db_get_user_orders(user_id: int) -> list:
+    cur = get_cursor()
+    if cur is None:
+        return []
+    try:
+        cur.execute("""
+            SELECT id, invoice_number, total, status, shipping_name, shipping_phone,
+                   shipping_email, shipping_city, shipping_address, shipping_postal_code,
+                   shipping_notes, card_holder, card_last4, card_expiration, created_at
+            FROM orders
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+        """, (user_id,))
+        return cur.fetchall()
+    except Exception as e:
+        rollback()
+        st.error(f"Error al obtener facturas: {e}")
+        return []
+
+
+def db_get_order_items(order_id: int) -> list:
+    cur = get_cursor()
+    if cur is None:
+        return []
+    try:
+        cur.execute("""
+            SELECT product_name, unit_price, quantity, subtotal
+            FROM order_items
+            WHERE order_id = %s
+            ORDER BY id
+        """, (order_id,))
+        return cur.fetchall()
+    except Exception as e:
+        rollback()
+        st.error(f"Error al obtener detalle de factura: {e}")
+        return []
 
 
 # ─────────────────────────────────────────────
@@ -607,8 +710,8 @@ with st.sidebar:
         st.markdown(f"*{u['role'].capitalize()}*")
         st.markdown("---")
 
-        pages = ["catalogo", "carrito"]
-        labels = ["Catalogo", f"Carrito ({len(st.session_state.cart)})"]
+        pages = ["catalogo", "carrito", "facturas"]
+        labels = ["Catalogo", f"Carrito ({len(st.session_state.cart)})", "Facturas"]
         if u["role"] == "admin":
             pages  += ["admin_productos", "admin_usuarios", "admin_stats"]
             labels += ["Gestion de productos", "Usuarios", "Estadisticas"]
@@ -774,9 +877,71 @@ elif st.session_state.page == "carrito":
             if not all(str(field).strip() for field in required_fields):
                 alert("Completa los datos de envio y tarjeta para confirmar el pedido.", "error")
             else:
-                for pid, item in cart.items():
-                    db_update_stock(pid, -int(item["qty"]))
-                clear_cart_and_show_success("Pedido confirmado. Gracias por tu compra.")
+                card_digits = "".join(ch for ch in card_number if ch.isdigit())
+                if len(card_digits) < 4:
+                    alert("Ingresa al menos los ultimos 4 digitos de la tarjeta.", "error")
+                else:
+                    shipping_data = {
+                        "name": shipping_name.strip(),
+                        "phone": shipping_phone.strip(),
+                        "email": shipping_email.strip(),
+                        "city": shipping_city.strip(),
+                        "address": shipping_address.strip(),
+                        "postal_code": shipping_postal_code.strip(),
+                        "notes": shipping_notes.strip(),
+                    }
+                    payment_data = {
+                        "card_holder": card_name.strip(),
+                        "card_last4": card_digits[-4:],
+                        "card_expiration": card_expiration.strip(),
+                    }
+                    ok, invoice_number, msg = db_create_order(
+                        st.session_state.user["id"],
+                        cart,
+                        shipping_data,
+                        payment_data,
+                    )
+                    if ok:
+                        clear_cart_and_show_success(f"Pedido confirmado. Factura {invoice_number} guardada.")
+                    else:
+                        alert(msg, "error")
+
+# ─────────────────────────────────────────────
+# PAGINA: FACTURAS
+# ─────────────────────────────────────────────
+
+elif st.session_state.page == "facturas":
+    st.markdown('<div class="section-label">Historial</div>', unsafe_allow_html=True)
+    st.title("Facturas")
+
+    orders = db_get_user_orders(st.session_state.user["id"])
+    if not orders:
+        alert("Todavia no tenes facturas guardadas.", "info")
+    else:
+        for order in orders:
+            created_at = str(order["created_at"])[:16] if order["created_at"] else ""
+            with st.expander(f"{order['invoice_number']} - ${order['total']:,.0f} - {created_at}"):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total", f"${order['total']:,.0f}")
+                c2.metric("Estado", order["status"].capitalize())
+                c3.metric("Tarjeta", f"**** {order['card_last4']}")
+
+                st.markdown("#### Datos de envio")
+                st.write(f"**Nombre:** {order['shipping_name']}")
+                st.write(f"**Contacto:** {order['shipping_phone']} - {order['shipping_email']}")
+                st.write(f"**Direccion:** {order['shipping_address']}, {order['shipping_city']} ({order['shipping_postal_code']})")
+                if order["shipping_notes"]:
+                    st.write(f"**Indicaciones:** {order['shipping_notes']}")
+
+                st.markdown("#### Productos")
+                items = db_get_order_items(order["id"])
+                for item in items:
+                    p1, p2, p3, p4 = st.columns([4, 1, 1, 1])
+                    p1.write(item["product_name"])
+                    p2.write(f"x{item['quantity']}")
+                    p3.write(f"${item['unit_price']:,.0f}")
+                    p4.write(f"${item['subtotal']:,.0f}")
+
 
 # ─────────────────────────────────────────────
 # PAGINA: LOGIN / REGISTRO
