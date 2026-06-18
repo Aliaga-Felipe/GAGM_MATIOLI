@@ -14,9 +14,11 @@ import psycopg2
 import psycopg2.extras 
 from psycopg2 import OperationalError, errors
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import hmac
+import html
+import uuid
 
 
 load_dotenv()
@@ -268,6 +270,98 @@ st.markdown("""
     .promo-stock {
         margin-top: 5px;
     }
+
+    .detail-shell {
+        padding: 1.5rem 2rem 2.5rem;
+        background: #FBF8F2;
+    }
+
+    .detail-topline {
+        color: #7A6347;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .detail-photo {
+        background: #F5F0E8;
+        border: 1px solid rgba(107,79,42,0.12);
+        border-radius: 10px;
+        min-height: 520px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .detail-photo img {
+        max-width: 100%;
+        max-height: 480px;
+        object-fit: contain;
+        border-radius: 8px;
+    }
+
+    .detail-info h1 {
+        color: #2A1A08;
+        font-size: 2rem;
+        line-height: 1.15;
+        margin: 0 0 0.75rem;
+    }
+
+    .detail-description {
+        color: #5C4A34;
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-top: 1rem;
+    }
+
+    .detail-paybox {
+        background: white;
+        border: 1px solid rgba(107,79,42,0.18);
+        border-radius: 10px;
+        padding: 1.4rem;
+        box-shadow: 0 10px 30px rgba(42,26,8,0.08);
+    }
+
+    .pay-label {
+        color: #7A6347;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 0.2rem;
+    }
+
+    .pay-price {
+        color: #2A1A08;
+        font-size: 2.1rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+
+    .pay-note {
+        color: #3D6B3A;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+
+    .pay-section {
+        border-top: 1px solid rgba(107,79,42,0.14);
+        padding-top: 1rem;
+        margin-top: 1rem;
+        color: #2A1A08;
+    }
+
+    .pay-method {
+        background: #F5F0E8;
+        border: 1px solid rgba(107,79,42,0.16);
+        border-radius: 8px;
+        padding: 0.7rem 0.9rem;
+        margin-top: 0.5rem;
+        color: #2A1A08;
+    }
+
+    .detail-back {
+        margin-bottom: 1rem;
+    }
     
     </style>
     """, unsafe_allow_html=True)
@@ -285,23 +379,12 @@ def get_connection():
     Lee credenciales desde variables de entorno (.env).
     """
     try:
-        database_url = os.getenv("DATABASE_URL")
-        if database_url:
-            conn = psycopg2.connect(
-                database_url,
-                sslmode=os.getenv("DB_SSLMODE", "require"),
-                connect_timeout=5,
-            )
-            conn.autocommit = False
-            return conn
-
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "localhost"),
             port=os.getenv("DB_PORT", "5432"),
             database=os.getenv("DB_NAME", "mateshop"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
-            sslmode=os.getenv("DB_SSLMODE", "prefer"),
             connect_timeout=5,
         )
         conn.autocommit = False
@@ -391,15 +474,16 @@ def db_get_product(product_id: int) -> dict:
         return {}
 
 
-def db_insert_product(name, description, price, stock, tag) -> bool:
+def db_insert_product(name, description, price, stock, tag, image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
-            INSERT INTO products (name, description, price, stock, tag)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (name, description, price, stock, tag))
+            INSERT INTO products
+            (name, description, price, stock, tag, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (name, description, price, stock, tag, image_url))
         commit()
         return True
     except Exception as e:
@@ -408,14 +492,14 @@ def db_insert_product(name, description, price, stock, tag) -> bool:
         return False
 
 
-def db_update_product(product_id, name, description, price, stock, tag) -> bool:
+def db_update_product(product_id,name,description,price,stock,tag,image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
             UPDATE products
-            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, updated_at=NOW()
+            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, image_url=%s, updated_at=NOW()
             WHERE id=%s
         """, (name, description, price, stock, tag, product_id))
         commit()
@@ -457,98 +541,6 @@ def db_update_stock(product_id, delta: int) -> bool:
         rollback()
         st.error(f"Error al actualizar stock: {e}")
         return False
-
-
-# ─────────────────────────────────────────────
-# OPERACIONES DE BASE DE DATOS — PEDIDOS / FACTURAS
-# ─────────────────────────────────────────────
-
-def db_create_order(user_id: int, cart: dict, shipping_data: dict, payment_data: dict) -> tuple[bool, str, str]:
-    cur = get_cursor()
-    if cur is None:
-        return False, "", "Sin conexion a la base de datos."
-    try:
-        invoice_number = f"MAT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{user_id}"
-        total = sum(float(item["price"]) * int(item["qty"]) for item in cart.values())
-
-        cur.execute("""
-            INSERT INTO orders (
-                invoice_number, user_id, total, shipping_name, shipping_phone,
-                shipping_email, shipping_city, shipping_address, shipping_postal_code,
-                shipping_notes, card_holder, card_last4, card_expiration
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            invoice_number, user_id, total,
-            shipping_data["name"], shipping_data["phone"], shipping_data["email"],
-            shipping_data["city"], shipping_data["address"], shipping_data["postal_code"],
-            shipping_data.get("notes", ""),
-            payment_data["card_holder"], payment_data["card_last4"], payment_data["card_expiration"],
-        ))
-        order_id = cur.fetchone()["id"]
-
-        for product_id, item in cart.items():
-            qty = int(item["qty"])
-            price = float(item["price"])
-            subtotal = price * qty
-
-            cur.execute("""
-                UPDATE products
-                SET stock = stock - %s, updated_at = NOW()
-                WHERE id = %s AND stock >= %s
-            """, (qty, product_id, qty))
-            if cur.rowcount == 0:
-                raise ValueError(f"No hay stock suficiente para {item['name']}.")
-
-            cur.execute("""
-                INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (order_id, product_id, item["name"], price, qty, subtotal))
-
-        commit()
-        return True, invoice_number, "Pedido guardado correctamente."
-    except Exception as e:
-        rollback()
-        return False, "", f"Error al guardar el pedido: {e}"
-
-
-def db_get_user_orders(user_id: int) -> list:
-    cur = get_cursor()
-    if cur is None:
-        return []
-    try:
-        cur.execute("""
-            SELECT id, invoice_number, total, status, shipping_name, shipping_phone,
-                   shipping_email, shipping_city, shipping_address, shipping_postal_code,
-                   shipping_notes, card_holder, card_last4, card_expiration, created_at
-            FROM orders
-            WHERE user_id = %s
-            ORDER BY created_at DESC
-        """, (user_id,))
-        return cur.fetchall()
-    except Exception as e:
-        rollback()
-        st.error(f"Error al obtener facturas: {e}")
-        return []
-
-
-def db_get_order_items(order_id: int) -> list:
-    cur = get_cursor()
-    if cur is None:
-        return []
-    try:
-        cur.execute("""
-            SELECT product_name, unit_price, quantity, subtotal
-            FROM order_items
-            WHERE order_id = %s
-            ORDER BY id
-        """, (order_id,))
-        return cur.fetchall()
-    except Exception as e:
-        rollback()
-        st.error(f"Error al obtener detalle de factura: {e}")
-        return []
 
 
 # ─────────────────────────────────────────────
@@ -637,7 +629,8 @@ def init_session():
         "page": "catalogo",
         "cart": {},
         "edit_product_id": None,
-        "order_success": "",
+        "selected_product_id": None,
+        "payment_confirmed": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -672,10 +665,28 @@ def alert(msg, kind="info"):
     st.markdown(f'<div class="alert-{kind}">{msg}</div>', unsafe_allow_html=True)
 
 
-def clear_cart_and_show_success(message: str):
-    st.session_state.cart = {}
-    st.session_state.order_success = message
-    st.rerun()
+def money(value):
+    return f"${float(value):,.0f}"
+
+
+def delivery_date():
+    return (datetime.now() + timedelta(days=3)).strftime("%d/%m/%Y")
+
+
+def add_product_to_cart(product, qty):
+    cart = st.session_state.cart
+    pid = product["id"]
+    current_qty = cart.get(pid, {}).get("qty", 0)
+    next_qty = min(product["stock"], current_qty + qty)
+    cart[pid] = {
+        "name": product["name"],
+        "price": float(product["price"]),
+        "qty": next_qty,
+        "stock": product["stock"],
+        "description": product.get("description") or "",
+        "image_url": product.get("image_url"),
+    }
+    st.session_state.cart = cart
 
 
 # ─────────────────────────────────────────────
@@ -710,13 +721,17 @@ with st.sidebar:
         st.markdown(f"*{u['role'].capitalize()}*")
         st.markdown("---")
 
-        pages = ["catalogo", "carrito", "facturas"]
-        labels = ["Catalogo", f"Carrito ({len(st.session_state.cart)})", "Facturas"]
+        pages = ["catalogo", "carrito"]
+        labels = ["Catalogo", f"Carrito ({len(st.session_state.cart)})"]
         if u["role"] == "admin":
             pages  += ["admin_productos", "admin_usuarios", "admin_stats"]
             labels += ["Gestion de productos", "Usuarios", "Estadisticas"]
+        if st.session_state.page == "producto_detalle" and st.session_state.selected_product_id:
+            pages += ["producto_detalle"]
+            labels += ["Detalle producto"]
 
-        choice = st.radio("Navegacion", labels, label_visibility="collapsed")
+        nav_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
+        choice = st.radio("Navegacion", labels, index=nav_index, label_visibility="collapsed")
         st.session_state.page = pages[labels.index(choice)]
 
         st.markdown("---")
@@ -727,8 +742,14 @@ with st.sidebar:
             st.rerun()
     else:
         st.markdown("Navegacion")
-        choice = st.radio("", ["Catalogo", "Iniciar sesion / Registrarse"], label_visibility="collapsed")
-        st.session_state.page = "catalogo" if choice == "Catalogo" else "login"
+        pages = ["catalogo", "login"]
+        labels = ["Catalogo", "Iniciar sesion / Registrarse"]
+        if st.session_state.page == "producto_detalle" and st.session_state.selected_product_id:
+            pages += ["producto_detalle"]
+            labels += ["Detalle producto"]
+        nav_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
+        choice = st.radio("", labels, index=nav_index, label_visibility="collapsed")
+        st.session_state.page = pages[labels.index(choice)]
 
 
 # ─────────────────────────────────────────────
@@ -779,22 +800,19 @@ if st.session_state.page == "catalogo":
 </div>
                     """, unsafe_allow_html=True)
 
+                if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
+                    st.session_state.selected_product_id = p["id"]
+                    st.session_state.payment_confirmed = False
+                    st.session_state.page = "producto_detalle"
+                    st.rerun()
+
                 if st.session_state.user and p["stock"] > 0:
                     qty = st.number_input(
                         "Cantidad", min_value=1, max_value=p["stock"],
                         value=1, key=f"qty_{p['id']}", label_visibility="collapsed"
                     )
                     if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
-                        cart = st.session_state.cart
-                        current_qty = cart.get(p["id"], {}).get("qty", 0)
-                        new_qty = min(p["stock"], current_qty + qty)
-                        cart[p["id"]] = {
-                            "name": p["name"],
-                            "price": float(p["price"]),
-                            "qty": new_qty,
-                            "stock": p["stock"],
-                        }
-                        st.session_state.cart = cart
+                        add_product_to_cart(p, qty)
                         st.success(f"✓ {p['name']} agregado")
                         st.rerun()
                 elif not st.session_state.user:
@@ -805,12 +823,107 @@ if st.session_state.page == "catalogo":
 # PAGINA: CARRITO
 # ─────────────────────────────────────────────
 
+elif st.session_state.page == "producto_detalle":
+    product_id = st.session_state.selected_product_id
+
+    if st.button("Volver al catalogo", key="back_to_catalog", use_container_width=False):
+        st.session_state.page = "catalogo"
+        st.session_state.payment_confirmed = False
+        st.rerun()
+
+    if not product_id:
+        alert("Selecciona un producto desde el catalogo.", "info")
+        st.stop()
+
+    product = db_get_product(product_id)
+    if not product:
+        alert("No se pudo cargar el producto seleccionado.", "error")
+        st.stop()
+
+    image_path = product.get("image_url") or "images/mate_madera.png"
+    image_base64 = get_base64_favicon(image_path)
+    name = html.escape(str(product.get("name") or "Producto"))
+    description = html.escape(str(product.get("description") or "Sin descripcion disponible."))
+    tag = html.escape(str(product.get("tag") or "catalogo"))
+    price = float(product.get("price") or 0)
+    stock = int(product.get("stock") or 0)
+    six_payments = price / 6 if price else 0
+
+    st.markdown('<div class="detail-shell">', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="detail-topline">Matioli | {tag} | Stock disponible: {stock}</div>',
+        unsafe_allow_html=True
+    )
+
+    detail_col, pay_col = st.columns([1.65, 0.85], gap="large")
+
+    with detail_col:
+        st.markdown(f"""
+        <div class="detail-photo">
+            <img src="data:image/jpeg;base64,{image_base64}" alt="{name}">
+        </div>
+        <div class="detail-info">
+            <div class="section-label">{tag}</div>
+            <h1>{name}</h1>
+            <div class="detail-description">{description}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with pay_col:
+        st.markdown(f"""
+        <div class="detail-paybox">
+            <div class="pay-label">Importe</div>
+            <div class="pay-price">{money(price)}</div>
+            <div class="pay-note">En 6 cuotas de {money(six_payments)}</div>
+            <div class="pay-section">
+                <strong>Fecha de entrega aproximada</strong><br>
+                Llega el {delivery_date()}
+            </div>
+            <div class="pay-section">
+                <strong>Metodos de pago</strong>
+                <div class="pay-method">Tarjeta de credito o debito</div>
+                <div class="pay-method">Transferencia bancaria</div>
+                <div class="pay-method">Efectivo al retirar</div>
+            </div>
+            <div class="pay-section">
+                <strong>{'Stock disponible' if stock > 0 else 'Sin stock disponible'}</strong><br>
+                Compra simulada, sin cobro real.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        qty = st.number_input(
+            "Cantidad",
+            min_value=1,
+            max_value=max(stock, 1),
+            value=1,
+            disabled=stock == 0,
+            key=f"detail_qty_{product_id}"
+        )
+        payment_method = st.radio(
+            "Metodo elegido",
+            ["Tarjeta", "Transferencia", "Efectivo al retirar"],
+            key=f"payment_method_{product_id}"
+        )
+
+        pay_disabled = stock == 0
+        if st.button("Pagar ahora", key=f"pay_now_{product_id}", use_container_width=True, disabled=pay_disabled):
+            st.session_state.payment_confirmed = True
+            alert(f"Pago simulado aprobado con {payment_method}. Total: {money(price * qty)}", "success")
+
+        if st.button("Agregar al carrito", key=f"detail_add_{product_id}", use_container_width=True, disabled=pay_disabled):
+            add_product_to_cart(product, qty)
+            alert(f"Producto agregado al carrito: {name}", "success")
+
+        if st.session_state.payment_confirmed:
+            alert("Operacion simulada correctamente. No se realizo ningun cobro real.", "info")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 elif st.session_state.page == "carrito":
     st.markdown('<div class="section-label">Tu compra</div>', unsafe_allow_html=True)
     st.title("Carrito")
-    if st.session_state.order_success:
-        alert(st.session_state.order_success, "success")
-        st.session_state.order_success = ""
 
     cart = st.session_state.cart
     if not cart:
@@ -818,15 +931,10 @@ elif st.session_state.page == "carrito":
     else:
         total = 0
         for pid, item in list(cart.items()):
-            if item["stock"] <= 0:
-                del st.session_state.cart[pid]
-                alert(f"{item['name']} ya no tiene stock y se quito del carrito.", "info")
-                st.rerun()
             c1, c2, c3, c4 = st.columns([4, 1, 2, 1])
             with c1:
                 st.write(f"**{item['name']}**")
             with c2:
-                item["qty"] = min(item["qty"], item["stock"])
                 new_qty = st.number_input("", min_value=1, max_value=item["stock"],
                                           value=item["qty"], key=f"cart_qty_{pid}", label_visibility="collapsed")
                 cart[pid]["qty"] = new_qty
@@ -842,105 +950,11 @@ elif st.session_state.page == "carrito":
         st.markdown("---")
         st.markdown(f"### Total: **${total:,.0f}**")
 
-        st.markdown("### Datos de envio y pago")
-        with st.form("checkout_form"):
-            st.markdown("#### Envio")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                shipping_name = st.text_input("Nombre y apellido", value=st.session_state.user.get("full_name", ""))
-                shipping_phone = st.text_input("Telefono")
-                shipping_city = st.text_input("Ciudad")
-            with col_b:
-                shipping_email = st.text_input("Email", value=st.session_state.user.get("email", ""))
-                shipping_address = st.text_input("Direccion")
-                shipping_postal_code = st.text_input("Codigo postal")
-
-            shipping_notes = st.text_area("Indicaciones para la entrega", placeholder="Piso, departamento, horario preferido...")
-
-            st.markdown("#### Tarjeta")
-            col_c, col_d = st.columns(2)
-            with col_c:
-                card_name = st.text_input("Titular de la tarjeta")
-                card_number = st.text_input("Numero de tarjeta", placeholder="0000 0000 0000 0000")
-            with col_d:
-                card_expiration = st.text_input("Vencimiento", placeholder="MM/AA")
-                card_security_code = st.text_input("Codigo de seguridad", type="password", placeholder="CVV")
-
-            submitted_checkout = st.form_submit_button("Confirmar pedido", use_container_width=True)
-
-        if submitted_checkout:
-            required_fields = [
-                shipping_name, shipping_phone, shipping_email, shipping_city,
-                shipping_address, shipping_postal_code, card_name, card_number,
-                card_expiration, card_security_code,
-            ]
-            if not all(str(field).strip() for field in required_fields):
-                alert("Completa los datos de envio y tarjeta para confirmar el pedido.", "error")
-            else:
-                card_digits = "".join(ch for ch in card_number if ch.isdigit())
-                if len(card_digits) < 4:
-                    alert("Ingresa al menos los ultimos 4 digitos de la tarjeta.", "error")
-                else:
-                    shipping_data = {
-                        "name": shipping_name.strip(),
-                        "phone": shipping_phone.strip(),
-                        "email": shipping_email.strip(),
-                        "city": shipping_city.strip(),
-                        "address": shipping_address.strip(),
-                        "postal_code": shipping_postal_code.strip(),
-                        "notes": shipping_notes.strip(),
-                    }
-                    payment_data = {
-                        "card_holder": card_name.strip(),
-                        "card_last4": card_digits[-4:],
-                        "card_expiration": card_expiration.strip(),
-                    }
-                    ok, invoice_number, msg = db_create_order(
-                        st.session_state.user["id"],
-                        cart,
-                        shipping_data,
-                        payment_data,
-                    )
-                    if ok:
-                        clear_cart_and_show_success(f"Pedido confirmado. Factura {invoice_number} guardada.")
-                    else:
-                        alert(msg, "error")
-
-# ─────────────────────────────────────────────
-# PAGINA: FACTURAS
-# ─────────────────────────────────────────────
-
-elif st.session_state.page == "facturas":
-    st.markdown('<div class="section-label">Historial</div>', unsafe_allow_html=True)
-    st.title("Facturas")
-
-    orders = db_get_user_orders(st.session_state.user["id"])
-    if not orders:
-        alert("Todavia no tenes facturas guardadas.", "info")
-    else:
-        for order in orders:
-            created_at = str(order["created_at"])[:16] if order["created_at"] else ""
-            with st.expander(f"{order['invoice_number']} - ${order['total']:,.0f} - {created_at}"):
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total", f"${order['total']:,.0f}")
-                c2.metric("Estado", order["status"].capitalize())
-                c3.metric("Tarjeta", f"**** {order['card_last4']}")
-
-                st.markdown("#### Datos de envio")
-                st.write(f"**Nombre:** {order['shipping_name']}")
-                st.write(f"**Contacto:** {order['shipping_phone']} - {order['shipping_email']}")
-                st.write(f"**Direccion:** {order['shipping_address']}, {order['shipping_city']} ({order['shipping_postal_code']})")
-                if order["shipping_notes"]:
-                    st.write(f"**Indicaciones:** {order['shipping_notes']}")
-
-                st.markdown("#### Productos")
-                items = db_get_order_items(order["id"])
-                for item in items:
-                    p1, p2, p3, p4 = st.columns([4, 1, 1, 1])
-                    p1.write(item["product_name"])
-                    p2.write(f"x{item['quantity']}")
-                    p3.write(f"${item['unit_price']:,.0f}")
-                    p4.write(f"${item['subtotal']:,.0f}")
+        if st.button("Confirmar pedido", use_container_width=True):
+            # Aqui iria la logica de pedidos (tabla orders)
+            alert("✓ Pedido confirmado. ¡Gracias por tu compra!", "success")
+            st.session_state.cart = {}
+            st.rerun()
 
 
 # ─────────────────────────────────────────────
@@ -1030,20 +1044,81 @@ elif st.session_state.page == "admin_productos":
 
     # ── Nuevo producto ──
     with tab_add:
-        with st.form("form_new_product"):
-            name  = st.text_input("Nombre del producto")
-            desc  = st.text_area("Descripcion")
-            price = st.number_input("Precio ($)", min_value=0.0, step=100.0, format="%.2f")
-            stock = st.number_input("Stock inicial", min_value=0, step=1)
-            tag   = st.selectbox("Categoria", TAG_OPTIONS)
-            ok    = st.form_submit_button("Agregar producto", use_container_width=True)
-        if ok:
-            if not name:
-                alert("El nombre es obligatorio.", "error")
-            elif db_insert_product(name, desc, price, stock, tag):
-                alert(f"✓ Producto '{name}' agregado correctamente.", "success")
-                st.rerun()
 
+        with st.form("form_new_product"):
+
+            name = st.text_input("Nombre del producto")
+
+            desc = st.text_area("Descripcion")
+
+            price = st.number_input(
+                "Precio ($)",
+                min_value=0.0,
+                step=100.0,
+                format="%.2f"
+            )
+
+            stock = st.number_input(
+                "Stock inicial",
+                min_value=0,
+                step=1
+            )
+
+            tag = st.selectbox(
+                "Categoria",
+                TAG_OPTIONS
+            )
+
+            image_file = st.file_uploader(
+                "Imagen del producto",
+                type=["png", "jpg", "jpeg"]
+            )
+
+            ok = st.form_submit_button(
+                "Agregar producto",
+                use_container_width=True
+            )
+
+        if ok:
+
+            image_path = None
+
+            if image_file is not None:
+
+                extension = image_file.name.split(".")[-1]
+
+                filename = f"{uuid.uuid4()}.{extension}"
+
+                image_path = os.path.join(
+                    "images",
+                    filename
+                )
+
+                with open(image_path, "wb") as f:
+                    f.write(image_file.getbuffer())
+
+            if not name:
+
+                alert(
+                    "El nombre es obligatorio.",
+                    "error"
+                )
+
+            elif db_insert_product(
+                name,
+                desc,
+                price,
+                stock,
+                tag,
+                image_path
+            ):
+
+                alert(
+                    f"✓ Producto '{name}' agregado correctamente.",
+                    "success"
+                )
+
+                st.rerun()
     # ── Editar producto ──
     with tab_edit:
         products = db_get_products()
