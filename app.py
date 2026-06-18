@@ -534,6 +534,7 @@ def init_session():
         "page": "catalogo",
         "cart": {},
         "edit_product_id": None,
+        "order_success": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -566,6 +567,12 @@ def stock_label(stock):
 
 def alert(msg, kind="info"):
     st.markdown(f'<div class="alert-{kind}">{msg}</div>', unsafe_allow_html=True)
+
+
+def clear_cart_and_show_success(message: str):
+    st.session_state.cart = {}
+    st.session_state.order_success = message
+    st.rerun()
 
 
 # ─────────────────────────────────────────────
@@ -676,10 +683,12 @@ if st.session_state.page == "catalogo":
                     )
                     if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
                         cart = st.session_state.cart
+                        current_qty = cart.get(p["id"], {}).get("qty", 0)
+                        new_qty = min(p["stock"], current_qty + qty)
                         cart[p["id"]] = {
                             "name": p["name"],
                             "price": float(p["price"]),
-                            "qty": cart.get(p["id"], {}).get("qty", 0) + qty,
+                            "qty": new_qty,
                             "stock": p["stock"],
                         }
                         st.session_state.cart = cart
@@ -696,6 +705,9 @@ if st.session_state.page == "catalogo":
 elif st.session_state.page == "carrito":
     st.markdown('<div class="section-label">Tu compra</div>', unsafe_allow_html=True)
     st.title("Carrito")
+    if st.session_state.order_success:
+        alert(st.session_state.order_success, "success")
+        st.session_state.order_success = ""
 
     cart = st.session_state.cart
     if not cart:
@@ -703,10 +715,15 @@ elif st.session_state.page == "carrito":
     else:
         total = 0
         for pid, item in list(cart.items()):
+            if item["stock"] <= 0:
+                del st.session_state.cart[pid]
+                alert(f"{item['name']} ya no tiene stock y se quito del carrito.", "info")
+                st.rerun()
             c1, c2, c3, c4 = st.columns([4, 1, 2, 1])
             with c1:
                 st.write(f"**{item['name']}**")
             with c2:
+                item["qty"] = min(item["qty"], item["stock"])
                 new_qty = st.number_input("", min_value=1, max_value=item["stock"],
                                           value=item["qty"], key=f"cart_qty_{pid}", label_visibility="collapsed")
                 cart[pid]["qty"] = new_qty
@@ -722,12 +739,44 @@ elif st.session_state.page == "carrito":
         st.markdown("---")
         st.markdown(f"### Total: **${total:,.0f}**")
 
-        if st.button("Confirmar pedido", use_container_width=True):
-            # Aqui iria la logica de pedidos (tabla orders)
-            alert("✓ Pedido confirmado. ¡Gracias por tu compra!", "success")
-            st.session_state.cart = {}
-            st.rerun()
+        st.markdown("### Datos de envio y pago")
+        with st.form("checkout_form"):
+            st.markdown("#### Envio")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                shipping_name = st.text_input("Nombre y apellido", value=st.session_state.user.get("full_name", ""))
+                shipping_phone = st.text_input("Telefono")
+                shipping_city = st.text_input("Ciudad")
+            with col_b:
+                shipping_email = st.text_input("Email", value=st.session_state.user.get("email", ""))
+                shipping_address = st.text_input("Direccion")
+                shipping_postal_code = st.text_input("Codigo postal")
 
+            shipping_notes = st.text_area("Indicaciones para la entrega", placeholder="Piso, departamento, horario preferido...")
+
+            st.markdown("#### Tarjeta")
+            col_c, col_d = st.columns(2)
+            with col_c:
+                card_name = st.text_input("Titular de la tarjeta")
+                card_number = st.text_input("Numero de tarjeta", placeholder="0000 0000 0000 0000")
+            with col_d:
+                card_expiration = st.text_input("Vencimiento", placeholder="MM/AA")
+                card_security_code = st.text_input("Codigo de seguridad", type="password", placeholder="CVV")
+
+            submitted_checkout = st.form_submit_button("Confirmar pedido", use_container_width=True)
+
+        if submitted_checkout:
+            required_fields = [
+                shipping_name, shipping_phone, shipping_email, shipping_city,
+                shipping_address, shipping_postal_code, card_name, card_number,
+                card_expiration, card_security_code,
+            ]
+            if not all(str(field).strip() for field in required_fields):
+                alert("Completa los datos de envio y tarjeta para confirmar el pedido.", "error")
+            else:
+                for pid, item in cart.items():
+                    db_update_stock(pid, -int(item["qty"]))
+                clear_cart_and_show_success("Pedido confirmado. Gracias por tu compra.")
 
 # ─────────────────────────────────────────────
 # PAGINA: LOGIN / REGISTRO
