@@ -32,7 +32,7 @@ load_dotenv()
 #---------------------
 def get_base64_favicon(path):
     if not os.path.exists(path):
-        path = "images/logo_mate.jpeg"  # imagen por defecto
+        path = "images/mate_madera.png"  # imagen por defecto
 
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
@@ -45,10 +45,14 @@ def get_base64(img_file):
 def header_hero(image_file):
 
     img = get_base64(image_file)
+    logo_img = get_base64("images/logo_pintado.png")
+    ig_img = get_base64("images/ig_transparente.png")
+    fcb_img = get_base64("images/fcb_transparente.png")
+    wsp_img = get_base64("images/wsp_transparente.png")
 
-    header_html = f"""
+    header_html = f'''
     <style>
-
+    
     /* Quitar márgenes laterales */
     .block-container {{
         padding-top: 0rem;
@@ -57,52 +61,121 @@ def header_hero(image_file):
         max-width: 100%;
     }}
 
+    /* Ocultar header nativo de Streamlit */
+    header[data-testid="stHeader"] {{
+        background: transparent;
+    }}
+
+    div[data-testid="stDecoration"] {{
+        display: none;
+    }}
+
     /* Barra superior */
     .top-bar {{
         background-color: #4b5d00;
-        height: 60px;
+        height: 120px;
         display: flex;
         align-items: center;
-        padding-left: 40px;
+        justify-content: space-between;
+        padding: 0 40px;
+        overflow: hidden;
     }}
 
-    /* Texto logo */
+    /* Logo + texto */
+    .brand {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }}
+
+    .brand-logo {{
+        height: 150px;
+        width: auto;
+        object-fit: contain;
+    }}
+
     .logo-text {{
         color: white;
-        font-size: 28px;
+        font-size: 32px;
         font-weight: bold;
         font-style: italic;
         font-family: sans-serif;
     }}
 
-    /* Hero */
+    /* Redes sociales */
+    .social-icons {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }}
+
+    .social-icons img {{
+        width: 40px;
+        height: 40px;
+        object-fit: contain;
+        display: block;
+    }}
+
+    .social-icons a {{
+        text-decoration: none;
+    }}
+
+    /* Imagen principal */
     .hero {{
         background-image: url("data:image/png;base64,{img}");
-        height: 497px;
+        height: 503px;
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
+        margin: 0;
+        margin-top: 0px; /* altura del header */
+        margin-bottom: 30px;
     }}
 
     </style>
 
     <div class="top-bar">
-        <div class="logo-text">
-            MATIOLI
+
+        <div class="brand">
+            <img class="brand-logo"
+                 src="data:image/png;base64,{logo_img}"
+                 alt="Logo">
+
+            <div class="logo-text">
+                MATIOLI
+            </div>
         </div>
+
+        <div class="social-icons">
+
+            <a href="https://www.instagram.com/" target="_blank">
+                <img src="data:image/png;base64,{ig_img}" alt="Instagram">
+            </a>
+
+            <a href="https://www.facebook.com/" target="_blank">
+                <img src="data:image/png;base64,{fcb_img}" alt="Facebook">
+            </a>
+
+            <a href="https://wa.me/5493510000000" target="_blank">
+                <img src="data:image/png;base64,{wsp_img}" alt="WhatsApp">
+            </a>
+
+        </div>
+
     </div>
 
     <div class="hero"></div>
-    """
+    '''
 
-    st.markdown(header_html, unsafe_allow_html=True)
+    #st.markdown(header_html, unsafe_allow_html=True)
+    st.html(header_html)
 
 # ─────────────────────────────────────────────
 # CONFIGURACION DE PaGINA
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="MateShop",
-    page_icon="/images/logo_mate.jpeg",
+    page_icon="images/logo_pintado.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -113,10 +186,18 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+
+    [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"]{
+        gap: 0rem !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap');
 
-            
-    
     html, body, [class*="css"] {
         font-family: 'DM Sans', sans-serif;
     }
@@ -503,7 +584,7 @@ def db_insert_product(name, description, price, stock, tag, image_url):
         return False
 
 
-def db_update_product(product_id,name,description,price,stock,tag,image_url):
+def db_update_product(product_id, name, description, price, stock, tag, image_url) -> bool:
     cur = get_cursor()
     if cur is None:
         return False
@@ -512,7 +593,7 @@ def db_update_product(product_id,name,description,price,stock,tag,image_url):
             UPDATE products
             SET name=%s, description=%s, price=%s, stock=%s, tag=%s, image_url=%s, updated_at=NOW()
             WHERE id=%s
-        """, (name, description, price, stock, tag, product_id))
+        """, (name, description, price, stock, tag, image_url, product_id))
         commit()
         return True
     except Exception as e:
@@ -746,11 +827,11 @@ init_session()
 
 TAG_OPTIONS = ["clasico", "premium", "popular", "edicion limitada", "accesorios"]
 TAG_IMAGES = {
-    "clasico": "images/fcb.jpeg",
-    "premium": "images/logo_mate.jpeg",
-    "popular": "images/logo_mate.jpeg",              #MAXI
-    "edicion limitada": "images/logo_mate.jpeg",
-    "accesorios": "images/logo_mate.jpeg"
+    "clasico": "images/mate_madera.png",
+    "premium": "images/mate_imperial.png",
+    "popular": "images/mate_camionero.png",
+    "edicion limitada": "images/mate_ceramica.png",
+    "accesorios": "images/bombilla.png"
 }
 
 def stock_label(stock):
@@ -813,7 +894,7 @@ st.markdown("""
     
     /* 3. Asegura que el botón del sidebar siga visible y funcional */
     button[data-testid="stSidebarCollapseIcon"] {
-        visibility: visible;
+        visibility: visible !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1349,7 +1430,7 @@ elif st.session_state.page == "admin_productos":
                                            index=TAG_OPTIONS.index(p["tag"]) if p["tag"] in TAG_OPTIONS else 0)
                     save = st.form_submit_button("Guardar cambios", use_container_width=True)
                 if save:
-                    if db_update_product(selected_id, name_e, desc_e, price_e, stock_e, tag_e):
+                    if db_update_product(selected_id, name_e, desc_e, price_e, stock_e, tag_e, p.get("image_url")):
                         alert("✓ Producto actualizado correctamente.", "success")
                         st.session_state.edit_product_id = None
                         st.rerun()
