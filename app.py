@@ -77,8 +77,9 @@ def header_hero(image_file):
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 40px;
+        padding: 0 0px;
         overflow: hidden;
+        gap: 10;
     }}
 
     /* Logo + texto */
@@ -122,12 +123,13 @@ def header_hero(image_file):
 
     /* Imagen principal */
     .hero {{
+        
         background-image: url("data:image/png;base64,{img}");
         height: 503px;
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        margin: 0;
+        margin left: 0;
         margin-top: 0px; /* altura del header */
         margin-bottom: 30px;
     }}
@@ -291,6 +293,12 @@ st.markdown("""
     .promo-card:hover {
         box-shadow: 0 8px 30px rgba(0,0,0,0.12);
     }
+
+    .catalog-count {
+        color: #7A6347;
+        font-size: 0.85rem;
+        margin: 6px 0 14px;
+    }
     
     /* IMAGEN GRANDE */
     
@@ -319,6 +327,13 @@ st.markdown("""
         font-size: 12px;
         text-transform: uppercase;
         color: #B85C28;
+        margin-bottom: 6px;
+    }
+
+    .promo-material {
+        font-size: 12px;
+        text-transform: capitalize;
+        color: #7A6347;
         margin-bottom: 6px;
     }
     
@@ -514,6 +529,21 @@ def rollback():
         conn.rollback()
 
 
+def ensure_product_material_column():
+    cur = get_cursor()
+    if cur is None:
+        return
+    try:
+        cur.execute("""
+            ALTER TABLE products
+            ADD COLUMN IF NOT EXISTS material VARCHAR(50) NOT NULL DEFAULT 'madera'
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_products_material ON products(material)")
+        commit()
+    except Exception:
+        rollback()
+
+
 # ─────────────────────────────────────────────
 # UTILIDADES DE SEGURIDAD
 # ─────────────────────────────────────────────
@@ -528,13 +558,13 @@ def hash_password(password: str) -> str:
 # OPERACIONES DE BASE DE DATOS — PRODUCTOS
 # ─────────────────────────────────────────────
 
-def db_get_products(search: str = "", tag: str = "todos") -> list:
+def db_get_products(search: str = "", tag: str = "todos", material: str = "todos") -> list:
     cur = get_cursor()
     if cur is None:
         return []
     try:
         query = """
-            SELECT id, name, description, price, stock, tag, image_url, updated_at
+            SELECT id, name, description, price, stock, tag, material, image_url, updated_at
             FROM products
             WHERE 1=1
         """
@@ -545,6 +575,9 @@ def db_get_products(search: str = "", tag: str = "todos") -> list:
         if tag and tag != "todos":
             query += " AND tag = %s"
             params.append(tag)
+        if material and material != "todos":
+            query += " AND material = %s"
+            params.append(material)
         query += " ORDER BY id"
         cur.execute(query, params)
         return cur.fetchall()
@@ -566,16 +599,16 @@ def db_get_product(product_id: int) -> dict:
         return {}
 
 
-def db_insert_product(name, description, price, stock, tag, image_url):
+def db_insert_product(name, description, price, stock, tag, material, image_url):
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
             INSERT INTO products
-            (name, description, price, stock, tag, image_url)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (name, description, price, stock, tag, image_url))
+            (name, description, price, stock, tag, material, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (name, description, price, stock, tag, material, image_url))
         commit()
         return True
     except Exception as e:
@@ -584,16 +617,16 @@ def db_insert_product(name, description, price, stock, tag, image_url):
         return False
 
 
-def db_update_product(product_id, name, description, price, stock, tag, image_url) -> bool:
+def db_update_product(product_id, name, description, price, stock, tag, material, image_url) -> bool:
     cur = get_cursor()
     if cur is None:
         return False
     try:
         cur.execute("""
             UPDATE products
-            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, image_url=%s, updated_at=NOW()
+            SET name=%s, description=%s, price=%s, stock=%s, tag=%s, material=%s, image_url=%s, updated_at=NOW()
             WHERE id=%s
-        """, (name, description, price, stock, tag, image_url, product_id))
+        """, (name, description, price, stock, tag, material, image_url, product_id))
         commit()
         return True
     except Exception as e:
@@ -819,6 +852,7 @@ def init_session():
 
 
 init_session()
+ensure_product_material_column()
 
 
 # ─────────────────────────────────────────────
@@ -826,6 +860,7 @@ init_session()
 # ─────────────────────────────────────────────
 
 TAG_OPTIONS = ["clasico", "premium", "popular", "edicion limitada", "accesorios"]
+MATERIAL_OPTIONS = ["madera", "vidrio", "metal", "ceramica", "calabaza"]
 TAG_IMAGES = {
     "clasico": "images/mate_madera.png",
     "premium": "images/mate_imperial.png",
@@ -943,24 +978,49 @@ with st.sidebar:
 
 if st.session_state.page == "catalogo":
     header_hero("images/Gemini_Generated_Image_xkgypxxkgypxxkgy.png")
-    col_search, col_tag = st.columns([3, 1])
-    with col_search:
-        search = st.text_input("", placeholder="Buscar productos...", label_visibility="collapsed")
-    with col_tag:
-        tag_filter = st.selectbox("", ["todos"] + TAG_OPTIONS, label_visibility="collapsed")
+    _, catalog_body, _ = st.columns([0.03, 0.94, 0.03])
+    with catalog_body:
+        col_search, col_tag, col_material = st.columns([3, 1, 1])
+        with col_search:
+            search = st.text_input(
+                "",
+                placeholder="Buscar productos...",
+                label_visibility="collapsed"
+            )
 
-    products = db_get_products(search, tag_filter)
+        with col_tag:
+            tag_filter = st.selectbox(
+                "",
+                ["todos"] + TAG_OPTIONS,
+                index=None,
+                placeholder="Categoría",
+                label_visibility="collapsed"
+            )
 
-    if not products:
-        alert("No se encontraron productos con esos filtros.", "info")
-    else:
-        st.markdown(f"<p style='color:#7A6347;font-size:0.85rem;margin-bottom:1rem'>{len(products)} producto(s) encontrado(s)</p>", unsafe_allow_html=True)
-        cols = st.columns(4)
-        for i, p in enumerate(products):
-            with cols[i % 4]:
-                icon_path = p.get("image_url") or "images/mate_madera.png"
-                icon_base64 = get_base64_favicon(icon_path)#MAXI
-                st.markdown(f"""
+        with col_material:
+            material_filter = st.selectbox(
+                "",
+                ["todos"] + MATERIAL_OPTIONS,
+                index=None,
+                placeholder="Material",
+                label_visibility="collapsed"
+            )
+
+        # Si el usuario no seleccionó nada, filtrar por "todos"
+        tag_filter = tag_filter or "todos"
+        material_filter = material_filter or "todos"
+        products = db_get_products(search, tag_filter, material_filter)
+
+        if not products:
+            alert("No se encontraron productos con esos filtros.", "info")
+        else:
+            st.markdown(f"<p class='catalog-count'>{len(products)} producto(s) encontrado(s)</p>", unsafe_allow_html=True)
+            cols = st.columns(4)
+            for i, p in enumerate(products):
+                with cols[i % 4]:
+                    icon_path = p.get("image_url") or "images/mate_madera.png"
+                    icon_base64 = get_base64_favicon(icon_path)#MAXI
+                    st.markdown(f"""
 <div class="promo-card">
     <div class="promo-image">
         <img src="data:image/jpeg;base64,{icon_base64}">
@@ -968,6 +1028,9 @@ if st.session_state.page == "catalogo":
     <div class="promo-content">
         <div class="promo-tag">
             {p['tag']}
+        </div>
+        <div class="promo-material">
+            {p.get('material') or 'madera'}
         </div>
         <div class="promo-title">
             {p['name']}
@@ -985,23 +1048,23 @@ if st.session_state.page == "catalogo":
 </div>
                     """, unsafe_allow_html=True)
 
-                if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
-                    st.session_state.selected_product_id = p["id"]
-                    st.session_state.payment_confirmed = False
-                    st.session_state.page = "producto_detalle"
-                    st.rerun()
-
-                if st.session_state.user and p["stock"] > 0:
-                    qty = st.number_input(
-                        "Cantidad", min_value=1, max_value=p["stock"],
-                        value=1, key=f"qty_{p['id']}", label_visibility="collapsed"
-                    )
-                    if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
-                        add_product_to_cart(p, qty)
-                        st.success(f"✓ {p['name']} agregado")
+                    if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
+                        st.session_state.selected_product_id = p["id"]
+                        st.session_state.payment_confirmed = False
+                        st.session_state.page = "producto_detalle"
                         st.rerun()
-                elif not st.session_state.user:
-                    st.caption("Inicia sesion para comprar")
+
+                    if st.session_state.user and p["stock"] > 0:
+                        qty = st.number_input(
+                            "Cantidad", min_value=1, max_value=p["stock"],
+                            value=1, key=f"qty_{p['id']}", label_visibility="collapsed"
+                        )
+                        if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
+                            add_product_to_cart(p, qty)
+                            st.success(f"✓ {p['name']} agregado")
+                            st.rerun()
+                    elif not st.session_state.user:
+                        st.caption("Inicia sesion para comprar")
 
 
 # ─────────────────────────────────────────────
@@ -1316,7 +1379,7 @@ elif st.session_state.page == "admin_productos":
         if products:
             for p in products:
                 c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 1])
-                c1.write(f"**{p['name']}**  \n*{p['tag']}*")
+                c1.write(f"**{p['name']}**  \n*{p['tag']} · {p.get('material') or 'madera'}*")
                 c2.write(f"${p['price']:,.0f}")
                 c3.markdown(stock_label(p["stock"]), unsafe_allow_html=True)
                 if c4.button("Editar", key=f"edit_{p['id']}"):
@@ -1355,6 +1418,11 @@ elif st.session_state.page == "admin_productos":
             tag = st.selectbox(
                 "Categoria",
                 TAG_OPTIONS
+            )
+
+            material = st.selectbox(
+                "Material",
+                MATERIAL_OPTIONS
             )
 
             image_file = st.file_uploader(
@@ -1398,6 +1466,7 @@ elif st.session_state.page == "admin_productos":
                 price,
                 stock,
                 tag,
+                material,
                 image_path
             ):
 
@@ -1428,9 +1497,12 @@ elif st.session_state.page == "admin_productos":
                     stock_e = st.number_input("Stock", value=int(p["stock"]), step=1)
                     tag_e   = st.selectbox("Categoria", TAG_OPTIONS,
                                            index=TAG_OPTIONS.index(p["tag"]) if p["tag"] in TAG_OPTIONS else 0)
+                    current_material = p.get("material") or "madera"
+                    material_e = st.selectbox("Material", MATERIAL_OPTIONS,
+                                              index=MATERIAL_OPTIONS.index(current_material) if current_material in MATERIAL_OPTIONS else 0)
                     save = st.form_submit_button("Guardar cambios", use_container_width=True)
                 if save:
-                    if db_update_product(selected_id, name_e, desc_e, price_e, stock_e, tag_e, p.get("image_url")):
+                    if db_update_product(selected_id, name_e, desc_e, price_e, stock_e, tag_e, material_e, p.get("image_url")):
                         alert("✓ Producto actualizado correctamente.", "success")
                         st.session_state.edit_product_id = None
                         st.rerun()
