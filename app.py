@@ -79,7 +79,7 @@ def header_hero(image_file):
         justify-content: space-between;
         padding: 0 0px;
         overflow: hidden;
-        gap: 10;
+        gap: 10px;
     }}
 
     /* Logo + texto */
@@ -129,9 +129,67 @@ def header_hero(image_file):
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        margin left: 0;
+        margin-left: 0;
         margin-top: 0px; /* altura del header */
         margin-bottom: 30px;
+    }}
+
+    @media (max-width: 900px) {{
+        .top-bar {{
+            height: 86px;
+        }}
+
+        .brand-logo {{
+            height: 96px;
+        }}
+
+        .logo-text {{
+            font-size: 24px;
+        }}
+
+        .social-icons img {{
+            width: 32px;
+            height: 32px;
+        }}
+
+        .hero {{
+            height: 320px;
+            background-position: center;
+            margin-bottom: 22px;
+        }}
+    }}
+
+    @media (max-width: 560px) {{
+        .block-container {{
+            padding-left: 0;
+            padding-right: 0;
+        }}
+
+        .top-bar {{
+            height: 72px;
+        }}
+
+        .brand-logo {{
+            height: 80px;
+        }}
+
+        .logo-text {{
+            font-size: 20px;
+        }}
+
+        .social-icons {{
+            gap: 6px;
+        }}
+
+        .social-icons img {{
+            width: 28px;
+            height: 28px;
+        }}
+
+        .hero {{
+            height: 240px;
+            margin-bottom: 18px;
+        }}
     }}
 
     </style>
@@ -288,6 +346,8 @@ st.markdown("""
         border: 1px solid rgba(0,0,0,0.08);
         transition: 0.2s;
         margin-bottom: 25px;
+        min-width: 0;
+        height: 470px;
     }
     
     .promo-card:hover {
@@ -304,7 +364,7 @@ st.markdown("""
     
     .promo-image {
         width: 100%;
-        height: 260px;
+        aspect-ratio: 4 / 3;
         overflow: hidden;
         background: #f5f0e8;
     }
@@ -351,6 +411,11 @@ st.markdown("""
         font-size: 13px;
         color: #777;
         margin-bottom: 10px;
+        min-height: 48px;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
     
     /* PRECIO */
@@ -365,6 +430,136 @@ st.markdown("""
     
     .promo-stock {
         margin-top: 5px;
+    }
+
+    @media (max-width: 900px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: nowrap;
+        }
+
+        [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            min-width: 0 !important;
+            flex: 1 1 0 !important;
+        }
+
+        .promo-image {
+            aspect-ratio: 4 / 3;
+        }
+
+        .promo-title {
+            font-size: 16px;
+        }
+
+        .promo-price {
+            font-size: 20px;
+        }
+    }
+
+    @media (max-width: 560px) {
+        html,
+        body,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"],
+        [data-testid="stMainBlockContainer"] {
+            max-width: 100vw !important;
+            overflow-x: auto !important;
+        }
+
+        .block-container {
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+            padding-top: 0 !important;
+        }
+
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: nowrap;
+            gap: 0.35rem !important;
+            overflow-x: visible !important;
+            overflow-y: hidden !important;
+        }
+
+        [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+            width: 0 !important;
+            min-width: 0 !important;
+            flex: 1 1 0 !important;
+        }
+
+        [data-testid="stHorizontalBlock"] > [data-testid="column"] > div {
+            min-width: 0 !important;
+            max-width: 100% !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.promo-card) {
+            gap: 0.5rem !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            scrollbar-width: thin;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.promo-card) > [data-testid="column"] {
+            width: 260px !important;
+            min-width: 260px !important;
+            max-width: 260px !important;
+            flex: 0 0 260px !important;
+        }
+
+        .catalog-count {
+            margin: 4px 0 12px;
+        }
+
+        .promo-card {
+            border-radius: 10px;
+            margin-bottom: 10px;
+            height: 430px;
+        }
+
+        .promo-image {
+            aspect-ratio: 4 / 3;
+        }
+
+        .promo-content {
+            padding: 6px;
+        }
+
+        .promo-tag,
+        .promo-material,
+        .promo-description,
+        .promo-stock {
+            font-size: 9px;
+            line-height: 1.15;
+        }
+
+        .promo-title {
+            font-size: 15px;
+            line-height: 1.2;
+            min-height: 36px;
+        }
+
+        .promo-price {
+            font-size: 20px;
+            line-height: 1.15;
+        }
+
+        .promo-description {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            min-height: 34px;
+        }
+
+        .stButton > button {
+            min-height: 36px;
+            padding: 0.35rem 0.4rem;
+            font-size: 14px;
+            line-height: 1.1;
+            white-space: normal;
+        }
+
+        div[data-baseweb="select"] *,
+        .stTextInput input {
+            font-size: 11px !important;
+        }
     }
 
     .detail-shell {
@@ -537,6 +732,16 @@ def ensure_product_material_column():
         cur.execute("""
             ALTER TABLE products
             ADD COLUMN IF NOT EXISTS material VARCHAR(50) NOT NULL DEFAULT 'madera'
+        """)
+        cur.execute("""
+            UPDATE products
+            SET material = CASE
+                WHEN LOWER(name) LIKE '%vidrio%' THEN 'vidrio'
+                WHEN LOWER(name) LIKE '%ceram%' THEN 'ceramica'
+                WHEN LOWER(name) LIKE '%calabaza%' THEN 'calabaza'
+                WHEN LOWER(name) LIKE '%termo%' OR LOWER(name) LIKE '%bombilla%' OR LOWER(description) LIKE '%alpaca%' THEN 'metal'
+                ELSE material
+            END
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_products_material ON products(material)")
         commit()
@@ -978,49 +1183,47 @@ with st.sidebar:
 
 if st.session_state.page == "catalogo":
     header_hero("images/Gemini_Generated_Image_xkgypxxkgypxxkgy.png")
-    _, catalog_body, _ = st.columns([0.03, 0.94, 0.03])
-    with catalog_body:
-        col_search, col_tag, col_material = st.columns([3, 1, 1])
-        with col_search:
-            search = st.text_input(
-                "",
-                placeholder="Buscar productos...",
-                label_visibility="collapsed"
-            )
+    col_search, col_tag, col_material = st.columns([3, 1, 1])
+    with col_search:
+        search = st.text_input(
+            "",
+            placeholder="Buscar productos...",
+            label_visibility="collapsed"
+        )
 
-        with col_tag:
-            tag_filter = st.selectbox(
-                "",
-                ["todos"] + TAG_OPTIONS,
-                index=None,
-                placeholder="Categoría",
-                label_visibility="collapsed"
-            )
+    with col_tag:
+        tag_filter = st.selectbox(
+            "",
+            ["todos"] + TAG_OPTIONS,
+            index=None,
+            placeholder="Categoría",
+            label_visibility="collapsed"
+        )
 
-        with col_material:
-            material_filter = st.selectbox(
-                "",
-                ["todos"] + MATERIAL_OPTIONS,
-                index=None,
-                placeholder="Material",
-                label_visibility="collapsed"
-            )
+    with col_material:
+        material_filter = st.selectbox(
+            "",
+            ["todos"] + MATERIAL_OPTIONS,
+            index=None,
+            placeholder="Material",
+            label_visibility="collapsed"
+        )
 
-        # Si el usuario no seleccionó nada, filtrar por "todos"
-        tag_filter = tag_filter or "todos"
-        material_filter = material_filter or "todos"
-        products = db_get_products(search, tag_filter, material_filter)
+    # Si el usuario no seleccionó nada, filtrar por "todos"
+    tag_filter = tag_filter or "todos"
+    material_filter = material_filter or "todos"
+    products = db_get_products(search, tag_filter, material_filter)
 
-        if not products:
-            alert("No se encontraron productos con esos filtros.", "info")
-        else:
-            st.markdown(f"<p class='catalog-count'>{len(products)} producto(s) encontrado(s)</p>", unsafe_allow_html=True)
-            cols = st.columns(4)
-            for i, p in enumerate(products):
-                with cols[i % 4]:
-                    icon_path = p.get("image_url") or "images/mate_madera.png"
-                    icon_base64 = get_base64_favicon(icon_path)#MAXI
-                    st.markdown(f"""
+    if not products:
+        alert("No se encontraron productos con esos filtros.", "info")
+    else:
+        st.markdown(f"<p class='catalog-count'>{len(products)} producto(s) encontrado(s)</p>", unsafe_allow_html=True)
+        cols = st.columns(4)
+        for i, p in enumerate(products):
+            with cols[i % 4]:
+                icon_path = p.get("image_url") or "images/mate_madera.png"
+                icon_base64 = get_base64_favicon(icon_path)#MAXI
+                st.markdown(f"""
 <div class="promo-card">
     <div class="promo-image">
         <img src="data:image/jpeg;base64,{icon_base64}">
@@ -1048,23 +1251,23 @@ if st.session_state.page == "catalogo":
 </div>
                     """, unsafe_allow_html=True)
 
-                    if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
-                        st.session_state.selected_product_id = p["id"]
-                        st.session_state.payment_confirmed = False
-                        st.session_state.page = "producto_detalle"
-                        st.rerun()
+                if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
+                    st.session_state.selected_product_id = p["id"]
+                    st.session_state.payment_confirmed = False
+                    st.session_state.page = "producto_detalle"
+                    st.rerun()
 
-                    if st.session_state.user and p["stock"] > 0:
-                        qty = st.number_input(
-                            "Cantidad", min_value=1, max_value=p["stock"],
-                            value=1, key=f"qty_{p['id']}", label_visibility="collapsed"
-                        )
-                        if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
-                            add_product_to_cart(p, qty)
-                            st.success(f"✓ {p['name']} agregado")
-                            st.rerun()
-                    elif not st.session_state.user:
-                        st.caption("Inicia sesion para comprar")
+                if st.session_state.user and p["stock"] > 0:
+                    qty = st.number_input(
+                        "Cantidad", min_value=1, max_value=p["stock"],
+                        value=1, key=f"qty_{p['id']}", label_visibility="collapsed"
+                    )
+                    if st.button("Agregar al carrito", key=f"add_{p['id']}", use_container_width=True):
+                        add_product_to_cart(p, qty)
+                        st.success(f"✓ {p['name']} agregado")
+                        st.rerun()
+                elif not st.session_state.user:
+                    st.caption("Inicia sesion para comprar")
 
 
 # ─────────────────────────────────────────────
