@@ -52,7 +52,7 @@ def header_hero(image_file):
 
     header_html = f'''
     <style>
-    
+
     /* Quitar márgenes laterales */
     .block-container {{
         padding-top: 0rem;
@@ -123,7 +123,7 @@ def header_hero(image_file):
 
     /* Imagen principal */
     .hero {{
-        
+
         background-image: url("data:image/png;base64,{img}");
         height: 503px;
         background-size: cover;
@@ -159,7 +159,7 @@ def header_hero(image_file):
         }}
     }}
 
-    @media (max-width: 560px) {{
+    @media (max-width: 1080px) {{
         .block-container {{
             padding-left: 0;
             padding-right: 0;
@@ -189,6 +189,8 @@ def header_hero(image_file):
         .hero {{
             height: 240px;
             margin-bottom: 18px;
+            border: 1px solid red;
+            background-size:100% 100%;
         }}
     }}
 
@@ -462,26 +464,30 @@ st.markdown("""
         [data-testid="stMain"],
         [data-testid="stMainBlockContainer"] {
             max-width: 100vw !important;
-            overflow-x: auto !important;
+            overflow-x: hidden !important;
         }
 
         .block-container {
-            padding-left: 0.35rem !important;
-            padding-right: 0.35rem !important;
+            padding-left: 0.45rem !important;
+            padding-right: 0.45rem !important;
             padding-top: 0 !important;
         }
 
         [data-testid="stHorizontalBlock"] {
-            flex-wrap: nowrap;
+            flex-wrap: wrap !important;
             gap: 0.35rem !important;
             overflow-x: visible !important;
-            overflow-y: hidden !important;
+            overflow-y: visible !important;
         }
 
         [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-            width: 0 !important;
+            width: auto !important;
             min-width: 0 !important;
-            flex: 1 1 0 !important;
+            flex: 1 1 calc(50% - 0.35rem) !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:not(:has(.promo-card)) > [data-testid="column"]:first-child {
+            flex-basis: 100% !important;
         }
 
         [data-testid="stHorizontalBlock"] > [data-testid="column"] > div {
@@ -490,75 +496,94 @@ st.markdown("""
         }
 
         [data-testid="stHorizontalBlock"]:has(.promo-card) {
-            gap: 0.5rem !important;
-            overflow-x: auto !important;
-            overflow-y: hidden !important;
-            scrollbar-width: thin;
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.45rem !important;
+            overflow-x: hidden !important;
+            overflow-y: visible !important;
         }
 
         [data-testid="stHorizontalBlock"]:has(.promo-card) > [data-testid="column"] {
-            width: 260px !important;
-            min-width: 260px !important;
-            max-width: 260px !important;
-            flex: 0 0 260px !important;
+            width: auto !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            flex: none !important;
         }
 
         .catalog-count {
-            margin: 4px 0 12px;
+            margin: 2px 0 8px;
+            font-size: 0.78rem;
         }
 
         .promo-card {
-            border-radius: 10px;
-            margin-bottom: 10px;
-            height: 430px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            height: auto;
+            min-height: 0;
         }
 
         .promo-image {
-            aspect-ratio: 4 / 3;
+            aspect-ratio: 1 / 1;
         }
 
         .promo-content {
-            padding: 6px;
+            padding: 6px 7px 8px;
         }
 
         .promo-tag,
-        .promo-material,
-        .promo-description,
         .promo-stock {
-            font-size: 9px;
+            font-size: 10px;
             line-height: 1.15;
+        }
+
+        .promo-material,
+        .promo-description {
+            display: none;
         }
 
         .promo-title {
-            font-size: 15px;
-            line-height: 1.2;
-            min-height: 36px;
-        }
-
-        .promo-price {
-            font-size: 20px;
-            line-height: 1.15;
-        }
-
-        .promo-description {
+            font-size: 12px;
+            line-height: 1.18;
+            min-height: 28px;
+            margin-bottom: 4px;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
-            min-height: 34px;
+        }
+
+        .promo-price {
+            font-size: 15px;
+            line-height: 1.15;
+        }
+
+        .promo-stock {
+            margin-top: 2px;
+            min-height: 14px;
         }
 
         .stButton > button {
-            min-height: 36px;
-            padding: 0.35rem 0.4rem;
-            font-size: 14px;
+            min-height: 28px;
+            padding: 0.2rem 0.35rem;
+            font-size: 12px;
             line-height: 1.1;
             white-space: normal;
+            border-radius: 6px;
         }
 
         div[data-baseweb="select"] *,
         .stTextInput input {
-            font-size: 11px !important;
+            font-size: 12px !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.detail-photo) {
+            display: block !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.detail-photo) > [data-testid="column"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin-bottom: 0.75rem;
         }
     }
 
@@ -652,6 +677,47 @@ st.markdown("""
 
     .detail-back {
         margin-bottom: 1rem;
+    }
+
+    @media (max-width: 560px) {
+        .detail-shell {
+            padding: 0.75rem 0.45rem 1.5rem;
+        }
+
+        .detail-topline {
+            font-size: 0.76rem;
+            margin-bottom: 0.55rem;
+        }
+
+        .detail-photo {
+            min-height: 0;
+            height: clamp(230px, 68vw, 300px);
+            padding: 0.55rem;
+        }
+
+        .detail-photo img {
+            width: 100%;
+            height: 100%;
+            max-height: none;
+            object-fit: contain;
+        }
+
+        .detail-info h1 {
+            font-size: 1.35rem;
+        }
+
+        .detail-description {
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+
+        .detail-paybox {
+            padding: 1rem;
+        }
+
+        .pay-price {
+            font-size: 1.65rem;
+        }
     }
     
     </style>
