@@ -20,6 +20,11 @@ import hmac
 import html
 import uuid
 
+try:
+    import mercadopago
+except ImportError:
+    mercadopago = None
+
 
 load_dotenv()
 #os.environ["DB_HOST"] = "localhost"
@@ -826,6 +831,27 @@ def rollback():
         conn.rollback()
 
 
+def ensure_order_mercadopago_columns():
+    """Migra tablas orders/order_items en bases ya existentes (ej. Neon) que
+    fueron creadas antes de sumar Mercado Pago, sin necesidad de correr
+    schema.sql a mano de nuevo."""
+    cur = get_cursor()
+    if cur is None:
+        return
+    try:
+        cur.execute("""
+            ALTER TABLE orders
+            ADD COLUMN IF NOT EXISTS payment_method VARCHAR(30) NOT NULL DEFAULT 'tarjeta_simulada'
+        """)
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS mercado_pago_preference_id VARCHAR(120)")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS mercado_pago_payment_id VARCHAR(120)")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS mercado_pago_status VARCHAR(80)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_mp_preference ON orders(mercado_pago_preference_id)")
+        commit()
+    except Exception:
+        rollback()
+
+
 def ensure_product_material_column():
     cur = get_cursor()
     if cur is None:
@@ -979,28 +1005,41 @@ def db_update_stock(product_id, delta: int) -> bool:
 # OPERACIONES DE BASE DE DATOS — USUARIOS
 # ─────────────────────────────────────────────
 
-def db_create_order(user_id: int, cart: dict, shipping_data: dict, payment_data: dict) -> tuple[bool, str, str]:
+def db_create_order(
+    user_id: int,
+    cart: dict,
+    shipping_data: dict,
+    payment_data: dict,
+    status: str = "confirmado",
+    payment_method: str = "tarjeta_simulada",
+    mercado_pago_preference_id: str | None = None,
+    mercado_pago_status: str | None = None,
+    decrement_stock: bool = True,
+    invoice_number_override: str | None = None,
+) -> tuple[bool, str, str]:
     cur = get_cursor()
     if cur is None:
         return False, "", "Sin conexion a la base de datos."
     try:
-        invoice_number = f"MAT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{user_id}"
+        invoice_number = invoice_number_override or f"MAT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{user_id}"
         total = sum(float(item["price"]) * int(item["qty"]) for item in cart.values())
 
         cur.execute("""
             INSERT INTO orders (
-                invoice_number, user_id, total, shipping_name, shipping_phone,
+                invoice_number, user_id, total, status, payment_method, shipping_name, shipping_phone,
                 shipping_email, shipping_city, shipping_address, shipping_postal_code,
-                shipping_notes, card_holder, card_last4, card_expiration
+                shipping_notes, card_holder, card_last4, card_expiration,
+                mercado_pago_preference_id, mercado_pago_status
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
-            invoice_number, user_id, total,
+            invoice_number, user_id, total, status, payment_method,
             shipping_data["name"], shipping_data["phone"], shipping_data["email"],
             shipping_data["city"], shipping_data["address"], shipping_data["postal_code"],
             shipping_data.get("notes", ""),
             payment_data["card_holder"], payment_data["card_last4"], payment_data["card_expiration"],
+            mercado_pago_preference_id, mercado_pago_status,
         ))
         order_id = cur.fetchone()["id"]
 
@@ -1009,13 +1048,14 @@ def db_create_order(user_id: int, cart: dict, shipping_data: dict, payment_data:
             price = float(item["price"])
             subtotal = price * qty
 
-            cur.execute("""
-                UPDATE products
-                SET stock = stock - %s, updated_at = NOW()
-                WHERE id = %s AND stock >= %s
-            """, (qty, product_id, qty))
-            if cur.rowcount == 0:
-                raise ValueError(f"No hay stock suficiente para {item['name']}.")
+            if decrement_stock:
+                cur.execute("""
+                    UPDATE products
+                    SET stock = stock - %s, updated_at = NOW()
+                    WHERE id = %s AND stock >= %s
+                """, (qty, product_id, qty))
+                if cur.rowcount == 0:
+                    raise ValueError(f"No hay stock suficiente para {item['name']}.")
 
             cur.execute("""
                 INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal)
@@ -1035,9 +1075,10 @@ def db_get_user_orders(user_id: int) -> list:
         return []
     try:
         cur.execute("""
-            SELECT id, invoice_number, total, status, shipping_name, shipping_phone,
+            SELECT id, invoice_number, total, status, payment_method, shipping_name, shipping_phone,
                    shipping_email, shipping_city, shipping_address, shipping_postal_code,
-                   shipping_notes, card_holder, card_last4, card_expiration, created_at
+                   shipping_notes, card_holder, card_last4, card_expiration,
+                   mercado_pago_preference_id, mercado_pago_payment_id, mercado_pago_status, created_at
             FROM orders
             WHERE user_id = %s
             ORDER BY created_at DESC
@@ -1065,6 +1106,167 @@ def db_get_order_items(order_id: int) -> list:
         rollback()
         st.error(f"Error al obtener detalle de factura: {e}")
         return []
+
+
+def db_update_mercado_pago_order(invoice_number: str, payment_id: str, mp_status: str) -> tuple[bool, str]:
+    cur = get_cursor()
+    if cur is None:
+        return False, "Sin conexion a la base de datos."
+    try:
+        app_status = {
+            "approved": "confirmado",
+            "pending": "pendiente_pago",
+            "in_process": "pendiente_pago",
+            "rejected": "rechazado",
+            "cancelled": "rechazado",
+        }.get(mp_status, mp_status or "pendiente_pago")
+
+        cur.execute("SELECT id, status FROM orders WHERE invoice_number = %s", (invoice_number,))
+        order = cur.fetchone()
+        if not order:
+            return False, "No se encontro la factura vinculada a Mercado Pago."
+
+        if mp_status == "approved" and order["status"] != "confirmado":
+            cur.execute("""
+                SELECT product_id, quantity
+                FROM order_items
+                WHERE order_id = %s AND product_id IS NOT NULL
+            """, (order["id"],))
+            for item in cur.fetchall():
+                cur.execute("""
+                    UPDATE products
+                    SET stock = stock - %s, updated_at = NOW()
+                    WHERE id = %s AND stock >= %s
+                """, (item["quantity"], item["product_id"], item["quantity"]))
+                if cur.rowcount == 0:
+                    raise ValueError("El pago fue aprobado, pero no hay stock suficiente para descontar la venta.")
+
+        cur.execute("""
+            UPDATE orders
+            SET status = %s,
+                mercado_pago_payment_id = %s,
+                mercado_pago_status = %s
+            WHERE invoice_number = %s
+        """, (app_status, payment_id, mp_status, invoice_number))
+        commit()
+        return True, f"Factura {invoice_number} actualizada con estado {app_status}."
+    except Exception as e:
+        rollback()
+        return False, f"Error al actualizar Mercado Pago: {e}"
+
+
+def check_pending_mercado_pago_order(invoice_number: str, preference_id: str | None) -> tuple[bool, str]:
+    """Reconsulta el estado de un pedido pendiente sin depender de que el
+    usuario haya vuelto por back_url (ej. cerro la pestana, pago desde el
+    celular, etc). Busca el ultimo pago asociado a la external_reference."""
+    if mercadopago is None:
+        return False, "Falta instalar mercadopago para verificar el pago."
+
+    access_token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "").strip()
+    if not access_token:
+        return False, "Falta MERCADO_PAGO_ACCESS_TOKEN para verificar el pago."
+
+    try:
+        sdk = mercadopago.SDK(access_token)
+        search_response = sdk.payment().search(
+            {"external_reference": invoice_number, "sort": "date_created", "criteria": "desc"}
+        )
+        results = search_response.get("response", {}).get("results", [])
+        if not results:
+            return False, "Mercado Pago todavia no registra un pago para esta factura."
+
+        payment = results[0]
+        mp_status = payment.get("status")
+        payment_id = payment.get("id")
+        ok, msg = db_update_mercado_pago_order(invoice_number, str(payment_id), mp_status)
+        return ok, msg
+    except Exception as e:
+        return False, f"Error al verificar Mercado Pago: {e}"
+
+
+def verify_mercado_pago_return() -> tuple[bool, str]:
+    params = st.query_params
+    invoice_number = params.get("order") or params.get("external_reference")
+    payment_id = params.get("payment_id") or params.get("collection_id")
+
+    if not invoice_number or not payment_id:
+        return False, ""
+    if mercadopago is None:
+        return False, "Falta instalar mercadopago para verificar el pago."
+
+    access_token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "").strip()
+    if not access_token:
+        return False, "Falta MERCADO_PAGO_ACCESS_TOKEN para verificar el pago."
+
+    try:
+        sdk = mercadopago.SDK(access_token)
+        payment_response = sdk.payment().get(payment_id)
+        payment = payment_response.get("response", {})
+        if payment_response.get("status") != 200:
+            return False, "No se pudo verificar el pago en Mercado Pago."
+        mp_status = payment.get("status") or params.get("status") or params.get("collection_status")
+        ok, msg = db_update_mercado_pago_order(invoice_number, str(payment_id), mp_status)
+        return ok, msg
+    except Exception as e:
+        return False, f"Error al verificar Mercado Pago: {e}"
+
+
+def create_mercado_pago_preference(cart: dict, user: dict, shipping_data: dict, external_reference: str) -> tuple[bool, dict, str]:
+    if mercadopago is None:
+        return False, {}, "Falta instalar la dependencia mercadopago. Ejecuta: pip install -r requirements.txt"
+
+    access_token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "").strip()
+    if not access_token:
+        return False, {}, "Falta configurar MERCADO_PAGO_ACCESS_TOKEN en el archivo .env."
+
+    sdk = mercadopago.SDK(access_token)
+    app_base_url = os.getenv("APP_BASE_URL", "").rstrip("/")
+    currency_id = os.getenv("MERCADO_PAGO_CURRENCY", "ARS")
+
+    preference_data = {
+        "items": [
+            {
+                "id": str(product_id),
+                "title": item["name"],
+                "quantity": int(item["qty"]),
+                "currency_id": currency_id,
+                "unit_price": float(item["price"]),
+            }
+            for product_id, item in cart.items()
+        ],
+        "payer": {
+            "name": shipping_data["name"],
+            "email": shipping_data["email"],
+            "phone": {"number": shipping_data["phone"]},
+            "address": {
+                "street_name": shipping_data["address"],
+                "zip_code": shipping_data["postal_code"],
+            },
+        },
+        "external_reference": external_reference,
+        "statement_descriptor": "MATIOLI",
+    }
+
+    if app_base_url:
+        preference_data["back_urls"] = {
+            "success": f"{app_base_url}/?mp_status=success&order={external_reference}",
+            "failure": f"{app_base_url}/?mp_status=failure&order={external_reference}",
+            "pending": f"{app_base_url}/?mp_status=pending&order={external_reference}",
+        }
+        preference_data["auto_return"] = "approved"
+
+    notification_url = os.getenv("MERCADO_PAGO_WEBHOOK_URL", "").strip()
+    if notification_url:
+        preference_data["notification_url"] = notification_url
+
+    try:
+        preference_response = sdk.preference().create(preference_data)
+        response = preference_response.get("response", {})
+        if preference_response.get("status") not in (200, 201) or not response.get("id"):
+            return False, {}, f"No se pudo crear la preferencia de Mercado Pago: {response}"
+        return True, response, "Preferencia creada correctamente."
+    except Exception as e:
+        return False, {}, f"Error al conectar con Mercado Pago: {e}"
 
 
 def db_register_user(email, password, full_name) -> tuple[bool, str]:
@@ -1152,6 +1354,8 @@ def init_session():
         "selected_product_id": None,
         "payment_confirmed": False,
         "order_success": "",
+        "mercado_pago_checkout_url": "",
+        "mercado_pago_invoice_number": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1160,6 +1364,13 @@ def init_session():
 
 init_session()
 ensure_product_material_column()
+ensure_order_mercadopago_columns()
+mp_return_ok, mp_return_msg = verify_mercado_pago_return()
+if mp_return_msg:
+    if mp_return_ok:
+        st.success(mp_return_msg)
+    else:
+        st.error(mp_return_msg)
 
 
 # ─────────────────────────────────────────────
@@ -1572,58 +1783,114 @@ elif st.session_state.page == "carrito":
 
             shipping_notes = st.text_area("Indicaciones para la entrega", placeholder="Piso, departamento, horario preferido...")
 
-            st.markdown("#### Tarjeta")
-            col_c, col_d = st.columns(2)
-            with col_c:
-                card_name = st.text_input("Titular de la tarjeta")
-                card_number = st.text_input("Numero de tarjeta", placeholder="0000 0000 0000 0000")
-            with col_d:
-                card_expiration = st.text_input("Vencimiento", placeholder="MM/AA")
-                card_security_code = st.text_input("Codigo de seguridad", type="password", placeholder="CVV")
+            st.markdown("#### Metodo de pago")
+            checkout_method = st.radio(
+                "Elegir metodo",
+                ["Tarjeta simulada", "Mercado Pago"],
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+
+            card_name = card_number = card_expiration = card_security_code = ""
+            if checkout_method == "Tarjeta simulada":
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    card_name = st.text_input("Titular de la tarjeta")
+                    card_number = st.text_input("Numero de tarjeta", placeholder="0000 0000 0000 0000")
+                with col_d:
+                    card_expiration = st.text_input("Vencimiento", placeholder="MM/AA")
+                    card_security_code = st.text_input("Codigo de seguridad", type="password", placeholder="CVV")
+            else:
+                alert("Se creara un link real de Mercado Pago para completar el pago fuera de la tienda.", "info")
 
             submitted_checkout = st.form_submit_button("Confirmar pedido", use_container_width=True)
 
         if submitted_checkout:
             required_fields = [
                 shipping_name, shipping_phone, shipping_email, shipping_city,
-                shipping_address, shipping_postal_code, card_name, card_number,
-                card_expiration, card_security_code,
+                shipping_address, shipping_postal_code,
             ]
+            if checkout_method == "Tarjeta simulada":
+                required_fields += [card_name, card_number, card_expiration, card_security_code]
             if not all(str(field).strip() for field in required_fields):
-                alert("Completa los datos de envio y tarjeta para confirmar el pedido.", "error")
+                alert("Completa los datos requeridos para confirmar el pedido.", "error")
             else:
-                card_digits = "".join(ch for ch in card_number if ch.isdigit())
-                if len(card_digits) < 4:
-                    alert("Ingresa al menos los ultimos 4 digitos de la tarjeta.", "error")
-                else:
-                    shipping_data = {
-                        "name": shipping_name.strip(),
-                        "phone": shipping_phone.strip(),
-                        "email": shipping_email.strip(),
-                        "city": shipping_city.strip(),
-                        "address": shipping_address.strip(),
-                        "postal_code": shipping_postal_code.strip(),
-                        "notes": shipping_notes.strip(),
-                    }
-                    payment_data = {
-                        "card_holder": card_name.strip(),
-                        "card_last4": card_digits[-4:],
-                        "card_expiration": card_expiration.strip(),
-                    }
-                    ok, invoice_number, msg = db_create_order(
-                        st.session_state.user["id"],
-                        cart,
-                        shipping_data,
-                        payment_data,
-                    )
-                    if ok:
-                        clear_cart_and_show_success(f"Pedido confirmado. Factura {invoice_number} guardada.")
-                    else:
-                        alert(msg, "error")
+                shipping_data = {
+                    "name": shipping_name.strip(),
+                    "phone": shipping_phone.strip(),
+                    "email": shipping_email.strip(),
+                    "city": shipping_city.strip(),
+                    "address": shipping_address.strip(),
+                    "postal_code": shipping_postal_code.strip(),
+                    "notes": shipping_notes.strip(),
+                }
 
-            alert("✓ Pedido confirmado. ¡Gracias por tu compra!", "success")
-            st.session_state.cart = {}
-            st.rerun()
+                if checkout_method == "Mercado Pago":
+                    external_reference = f"MAT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{st.session_state.user['id']}"
+                    ok_mp, preference, msg_mp = create_mercado_pago_preference(
+                        cart,
+                        st.session_state.user,
+                        shipping_data,
+                        external_reference,
+                    )
+                    if not ok_mp:
+                        alert(msg_mp, "error")
+                    else:
+                        payment_data = {
+                            "card_holder": "Mercado Pago",
+                            "card_last4": "MP",
+                            "card_expiration": "N/A",
+                        }
+                        ok, invoice_number, msg = db_create_order(
+                            st.session_state.user["id"],
+                            cart,
+                            shipping_data,
+                            payment_data,
+                            status="pendiente_pago",
+                            payment_method="mercado_pago",
+                            mercado_pago_preference_id=preference.get("id"),
+                            mercado_pago_status="preference_created",
+                            decrement_stock=False,
+                            invoice_number_override=external_reference,
+                        )
+                        if ok:
+                            checkout_url = preference.get("init_point") or preference.get("sandbox_init_point")
+                            if os.getenv("MERCADO_PAGO_USE_SANDBOX", "").lower() in ("1", "true", "yes"):
+                                checkout_url = preference.get("sandbox_init_point") or checkout_url
+                            st.session_state.mercado_pago_checkout_url = checkout_url or ""
+                            st.session_state.mercado_pago_invoice_number = invoice_number
+                            st.session_state.cart = {}
+                            alert(f"Factura {invoice_number} creada como pendiente. Usa el enlace de Mercado Pago para pagar.", "success")
+                        else:
+                            alert(msg, "error")
+                else:
+                    card_digits = "".join(ch for ch in card_number if ch.isdigit())
+                    if len(card_digits) < 4:
+                        alert("Ingresa al menos los ultimos 4 digitos de la tarjeta.", "error")
+                    else:
+                        payment_data = {
+                            "card_holder": card_name.strip(),
+                            "card_last4": card_digits[-4:],
+                            "card_expiration": card_expiration.strip(),
+                        }
+                        ok, invoice_number, msg = db_create_order(
+                            st.session_state.user["id"],
+                            cart,
+                            shipping_data,
+                            payment_data,
+                        )
+                        if ok:
+                            clear_cart_and_show_success(f"Pedido confirmado. Factura {invoice_number} guardada.")
+                        else:
+                            alert(msg, "error")
+
+        if st.session_state.mercado_pago_checkout_url:
+            st.link_button(
+                f"Pagar con Mercado Pago - {st.session_state.mercado_pago_invoice_number}",
+                st.session_state.mercado_pago_checkout_url,
+                use_container_width=True,
+            )
+
 
 
 # ─────────────────────────────────────────────
@@ -1644,7 +1911,22 @@ elif st.session_state.page == "facturas":
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Total", f"${order['total']:,.0f}")
                 c2.metric("Estado", order["status"].capitalize())
-                c3.metric("Tarjeta", f"**** {order['card_last4']}")
+                if order.get("payment_method") == "mercado_pago":
+                    c3.metric("Pago", "Mercado Pago")
+                    if order.get("mercado_pago_preference_id"):
+                        st.caption(f"Preferencia Mercado Pago: {order['mercado_pago_preference_id']}")
+                    if order["status"] == "pendiente_pago":
+                        if st.button("🔄 Verificar pago", key=f"mp_check_{order['id']}"):
+                            ok_check, msg_check = check_pending_mercado_pago_order(
+                                order["invoice_number"], order.get("mercado_pago_preference_id")
+                            )
+                            if ok_check:
+                                st.success(msg_check)
+                                st.rerun()
+                            else:
+                                st.info(msg_check)
+                else:
+                    c3.metric("Tarjeta", f"**** {order['card_last4']}")
 
                 st.markdown("#### Datos de envio")
                 st.write(f"**Nombre:** {order['shipping_name']}")

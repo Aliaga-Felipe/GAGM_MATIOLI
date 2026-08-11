@@ -36,6 +36,44 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ── DATOS DE PRUEBA — PRODUCTOS ──────────────────────────────
+CREATE TABLE IF NOT EXISTS orders (
+    id                           SERIAL PRIMARY KEY,
+    invoice_number               VARCHAR(40) UNIQUE NOT NULL,
+    user_id                      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    total                        NUMERIC(10,2) NOT NULL CHECK (total >= 0),
+    status                       VARCHAR(30) NOT NULL DEFAULT 'confirmado',
+    payment_method               VARCHAR(30) NOT NULL DEFAULT 'tarjeta_simulada',
+    shipping_name                VARCHAR(120) NOT NULL,
+    shipping_phone               VARCHAR(40) NOT NULL,
+    shipping_email               VARCHAR(180) NOT NULL,
+    shipping_city                VARCHAR(120) NOT NULL,
+    shipping_address             TEXT NOT NULL,
+    shipping_postal_code         VARCHAR(20) NOT NULL,
+    shipping_notes               TEXT,
+    card_holder                  VARCHAR(120) NOT NULL,
+    card_last4                   VARCHAR(4) NOT NULL,
+    card_expiration              VARCHAR(10) NOT NULL,
+    mercado_pago_preference_id   VARCHAR(120),
+    mercado_pago_payment_id      VARCHAR(120),
+    mercado_pago_status          VARCHAR(80),
+    created_at                   TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(30) NOT NULL DEFAULT 'tarjeta_simulada';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS mercado_pago_preference_id VARCHAR(120);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS mercado_pago_payment_id VARCHAR(120);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS mercado_pago_status VARCHAR(80);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id           SERIAL PRIMARY KEY,
+    order_id     INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id   INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_name VARCHAR(120) NOT NULL,
+    unit_price   NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+    quantity     INTEGER NOT NULL CHECK (quantity > 0),
+    subtotal     NUMERIC(10,2) NOT NULL CHECK (subtotal >= 0)
+);
+
 INSERT INTO products (name, description, price, stock, tag) VALUES
     ('Mate Calabaza Natural',     'Curada artesanalmente, con virola de alpaca. Capacidad 250ml.', 1500.00, 25, 'clasico'),
     ('Mate Imperial Palo Santo',  'Madera noble con aroma natural. Virola labrada a mano.',        3200.00,  8, 'premium'),
@@ -67,3 +105,7 @@ ON CONFLICT (email) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_products_tag   ON products(tag);
 CREATE INDEX IF NOT EXISTS idx_products_stock ON products(stock);
 CREATE INDEX IF NOT EXISTS idx_users_email    ON users(email);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_mp_preference ON orders(mercado_pago_preference_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
