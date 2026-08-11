@@ -356,6 +356,17 @@ st.markdown("""
         box-shadow: 0 8px 30px rgba(0,0,0,0.12);
     }
 
+    .promo-link {
+        color: inherit;
+        display: block;
+        text-decoration: none;
+    }
+
+    .promo-link:hover {
+        color: inherit;
+        text-decoration: none;
+    }
+
     .catalog-count {
         color: #7A6347;
         font-size: 0.85rem;
@@ -371,10 +382,28 @@ st.markdown("""
         background: #f5f0e8;
     }
     
+    .promo-image-link {
+        color: inherit;
+        display: block;
+        text-decoration: none;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+    }
+
+    .promo-image-link:hover,
+    .promo-image-link:focus,
+    .promo-image-link:active {
+        text-decoration: none;
+        color: inherit;
+    }
+
     .promo-image img {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        display: block;
+        pointer-events: none;
     }
     
     /* CONTENIDO */
@@ -680,7 +709,14 @@ st.markdown("""
     }
 
     @media (max-width: 560px) {
+        .detail-back {
+            position: relative;
+            z-index: 100;
+        }
+
         .detail-shell {
+            position: relative;
+            z-index: 1;
             padding: 0.75rem 0.45rem 1.5rem;
         }
 
@@ -1182,6 +1218,50 @@ def add_product_to_cart(product, qty):
     st.session_state.cart = cart
 
 
+def open_product_detail(product_id):
+    st.session_state.selected_product_id = product_id
+    st.session_state.payment_confirmed = False
+    st.session_state.page = "producto_detalle"
+    try:
+        st.query_params["producto"] = str(product_id)
+    except Exception:
+        pass
+
+
+def clear_product_detail_url():
+    try:
+        if "producto" in st.query_params:
+            del st.query_params["producto"]
+    except Exception:
+        pass
+
+
+def load_product_detail_from_url():
+    try:
+        product_param = st.query_params.get("producto")
+    except Exception:
+        product_param = None
+
+    if isinstance(product_param, list):
+        product_param = product_param[0] if product_param else None
+
+    if not product_param:
+        return
+
+    try:
+        product_id = int(product_param)
+    except (TypeError, ValueError):
+        clear_product_detail_url()
+        return
+
+    if product_id > 0:
+        st.session_state.selected_product_id = product_id
+        st.session_state.page = "producto_detalle"
+
+
+load_product_detail_from_url()
+
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -1248,6 +1328,7 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 
 if st.session_state.page == "catalogo":
+    clear_product_detail_url()
     header_hero("images/Gemini_Generated_Image_xkgypxxkgypxxkgy.png")
     col_search, col_tag, col_material = st.columns([3, 1, 1])
     with col_search:
@@ -1279,7 +1360,6 @@ if st.session_state.page == "catalogo":
     tag_filter = tag_filter or "todos"
     material_filter = material_filter or "todos"
     products = db_get_products(search, tag_filter, material_filter)
-
     if not products:
         alert("No se encontraron productos con esos filtros.", "info")
     else:
@@ -1289,11 +1369,12 @@ if st.session_state.page == "catalogo":
             with cols[i % 4]:
                 icon_path = p.get("image_url") or "images/mate_madera.png"
                 icon_base64 = get_base64_favicon(icon_path)#MAXI
+                product_url = f"?producto={p['id']}"
                 st.markdown(f"""
 <div class="promo-card">
-    <div class="promo-image">
-        <img src="data:image/jpeg;base64,{icon_base64}">
-    </div>
+    <a class="promo-image promo-image-link" href="{product_url}" target="_self" aria-label="Ver {html.escape(str(p['name']))}">
+        <img src="data:image/jpeg;base64,{icon_base64}" alt="{html.escape(str(p['name']))}">
+    </a>
     <div class="promo-content">
         <div class="promo-tag">
             {p['tag']}
@@ -1318,9 +1399,7 @@ if st.session_state.page == "catalogo":
                     """, unsafe_allow_html=True)
 
                 if st.button("Ver producto", key=f"view_{p['id']}", use_container_width=True):
-                    st.session_state.selected_product_id = p["id"]
-                    st.session_state.payment_confirmed = False
-                    st.session_state.page = "producto_detalle"
+                    open_product_detail(p["id"])
                     st.rerun()
 
                 if st.session_state.user and p["stock"] > 0:
@@ -1343,7 +1422,10 @@ if st.session_state.page == "catalogo":
 elif st.session_state.page == "producto_detalle":
     product_id = st.session_state.selected_product_id
 
+    st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True)
+
     if st.button("Volver al catalogo", key="back_to_catalog", use_container_width=False):
+        clear_product_detail_url()
         st.session_state.page = "catalogo"
         st.session_state.payment_confirmed = False
         st.rerun()
